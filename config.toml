@@ -1,3 +1,5 @@
-baseurl = "http://replace-this-with-your-hugo-site.com/"
+baseurl = "http://damienradtke.com/"
 languageCode = "en-us"
-title = "My New Hugo Site"
+title = "Version 7.0"
+
+pygmentsuseclasses = true
