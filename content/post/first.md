@@ -1,8 +1,7 @@
 +++
-date = "2016-02-10T10:38:35-06:00"
+date  = "2016-02-10T10:38:35-06:00"
 draft = true
 title = "Hello World"
-
 +++
 
 Here is a simple Go program:
