@@ -18,8 +18,6 @@
   <div class="container">
     <a class="path" href="{{ .Site.BaseURL }}">[{{ .Site.Title }}]</a>
     <span class="caret"># _</span>
-<<<<<<< HEAD
-=======
     {{ with (where $.Data.Pages "Section" "pages") }}
       <div style="float: right;">
       	{{ range $i, $page := . }}
@@ -29,7 +27,6 @@
         {{ end }}
       </div>
     {{ end }}
->>>>>>> Commit it
   </div>
 </header>
 
