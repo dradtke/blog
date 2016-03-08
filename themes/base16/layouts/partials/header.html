@@ -18,6 +18,18 @@
   <div class="container">
     <a class="path" href="{{ .Site.BaseURL }}">[{{ .Site.Title }}]</a>
     <span class="caret"># _</span>
+<<<<<<< HEAD
+=======
+    {{ with (where $.Data.Pages "Section" "pages") }}
+      <div style="float: right;">
+      	{{ range $i, $page := . }}
+      	  {{ $isFirst := eq $i 0 }}
+	  {{ if not $isFirst }}|{{ end }}
+	  <a class="path" href="{{ .RelPermalink }}">{{ $page.Title }}</a>
+        {{ end }}
+      </div>
+    {{ end }}
+>>>>>>> Commit it
   </div>
 </header>
 
