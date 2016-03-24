@@ -132,7 +132,7 @@ done
 echo "Calculating tree hash..."
 while true; do
     COUNT=`ls hash* | wc -l`
-    if [[ ${COUNT} -eq 2 ]]; then
+    if [[ ${COUNT} -le 2 ]]; then
         TREE_HASH=$(cat hash* | openssl dgst -sha256 | awk '{print $2}')
         break
     fi
