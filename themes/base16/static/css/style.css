@@ -526,3 +526,14 @@ article.single figure.me img {
 article.single figure.me figcaption h4 {
   color: #2D2D2D;
 }
+
+
+article.single figure.regular {
+  width: 100%;
+  margin: 0 auto;
+  text-align: center;
+}
+
+article.single figure.regular img {
+  width: auto;
+}

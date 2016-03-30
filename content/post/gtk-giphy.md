@@ -4,22 +4,45 @@ title = "Building a Giphy viewer in GTK+"
 draft = true
 +++
 
-Web applications get all the hype these days, so why not build a Giphy viewer
-in GTK+? In this post I'm going to build a simple application for using Giphy's
-API to search for `.gif`s.
+Web applications get all the hype these days, so why not buck the trend
+and build a desktop application instead? In this post I'm going to use GTK+
+to build a simple desktop program for integrating with Giphy's API.
 
 <!--more-->
+
+**NOTE**: Windows and Mac users will unfortunately not be able to run
+the example code, but stick around for a little bit anyway and you may
+still learn something neat.
+
+To whet your appetite, here's a preview of what it is that we're actually
+trying to build:
+
+{{< figure src="/images/gtk-giphy/giphy-homer.gif" class="regular" >}}
+
+<div style="text-align: center;">
+  64-bit Linux download:
+  <a href="/extras/gtk-giphy/giphy-viewer" download>executable</a>
+  /
+  <a href="/extras/gtk-giphy/giphy-viewer.sha1" download>checksum</a>
+</div>
+<br>
+
+Functionally, this app isn't too complicated. You type in a search term,
+hit Enter, and it will look up and display a random GIF matching your query.
+Giphy provides an endpoint for this, so all we have to do is build the UI
+around it.
 
 ## Setting Up
 
 This post is going to be focused on GNOME technologies, so you need to be
-running Linux (either on hardware or in a virtual machine), and you need to
-know how to use a command line, and how to use your package manager to install
-runtime libraries and development tools.
+running Linux (GTK+ is fully cross-platform, but the other modules used
+here aren't to my knowledge), know the basics of using a command line,
+and how to use your package manager to install runtime libraries and development
+tools.
 
 To begin, you will need to install the Vala compiler (I'm using 0.28.1), and
 development libraries for the following packages (my version listed as well,
-but versions other than mine should work as well):
+but other versions may work too):
 
 1. `gtk+-3.0` (3.16.7)
 2. `libsoup-2.4` (2.50.0)
@@ -36,10 +59,10 @@ GNOME 3 via openSUSE Leap; go check it out if you haven't heard of it!), and the
 GNOME API's are actually fairly pleasant to work with.
 
 If you'd like, this entire application can be written in pure C (as opposed to
-the Qt framework which requires C++), but another benefit to targeting GNOME
-technologies is that it comes with its own C#-inspired language that compiles
-to C, meaning you get the speed of an application written in C with the
-convenience of one written in Python (or nearly, at least).
+the Qt framework which requires C++), but another benefit of targeting GNOME
+technologies is that it has its own C#-inspired language that compiles to C: Vala.
+As a result, applications written in Vala are just as fast as ones written in C,
+but you get a language whose usability is on par with Python.
 
 ## Running the Examples
 
@@ -48,12 +71,6 @@ what was covered. Each example archive contains two files: the Vala source code,
 and a Makefile. To run each one, extract the contents, `cd` into the folder,
 and execute `make run`. Assuming your development environment is set up correctly,
 then the application will run.
-
-## What We Want
-
-For context, here's what we're ultimately trying to build:
-
-TODO: gif here!!
 
 # Part I: Hello World
 
@@ -66,17 +83,16 @@ not just a window full of widgets.
 
 GNOME applications are beginning to make a distinction between two main scopes:
 application-level and window-level. It's no big surprise that you can have multiple
-windows of an application open at a time; GNOME is embracing that usage pattern by
+windows of an application open at a time, and GNOME is embracing that usage pattern by
 allowing you to separate the concerns of the application on a global level with those
 that are only concerned with one window at a time.
 
 For example, imagine that our Giphy Viewer is already built. If you'd like to do
 two searches at the same time, say to compare results, you'd open up two Giphy Viewer
-windows. Each window would contain the search field, and the image result. Now say that
-Giphy adds a new version of their API, and you want to ensure that Giphy Viewer is
-using the new endpoint across all instances of the application. That would be a good
-usage of the application-wide, global scope, because it's a setting that pertains
-to as many windows as you have open.
+windows. Each window would contain the search field, and the image result. However,
+application settings should always be the same between the two. If the application
+is made to be more configurable, and the user wants to provide his or her own API key,
+that key should be available to any and all open windows.
 
 As a result, the Hello World is broken down roughly into three sections:
 
@@ -148,5 +164,9 @@ and some flags. Note that the application id can be whatever you want, so long
 as it's unique. 99% of the time, you'll probably want `FLAGS_NONE` for the
 application flags, but there are some behavioral adjustments you can make to
 the application as a whole using the [flags](http://valadoc.org/#!api=gio-2.0/GLib.ApplicationFlags).
+
+If you run this application, you should see a window pop up:
+
+{{< figure src="/images/gtk-giphy/gtk-hello-world.png" class="regular" >}}
 
 [1]: /extras/gtk-giphy/1.tar.gz
