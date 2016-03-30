@@ -6,6 +6,14 @@
   <img src="/img/base16-eighties.svg">
 </div>
 
-<div style="text-align: center;">
-  Pioneer of insanity-driven development.
-</div>
+<div id="catchphrase" style="text-align: center;"></div>
+
+<script type="text/javascript">
+  var catchphrases = [
+    "Pioneer of insanity-driven development.",
+    "In pursuit of truly artisanal code.",
+    "Just trying to make sense of it all."
+  ];
+
+  document.getElementById("catchphrase").innerHTML = catchphrases[Math.floor(Math.random() * catchphrases.length)];
+</script>
