@@ -1,6 +1,6 @@
 +++
 date = "2016-03-29T22:03:32-05:00"
-title = "Building a Giphy-Searching App in GTK+"
+title = "Building a Giphy-Searching App in GTK+ 3"
 draft = true
 +++
 
@@ -11,7 +11,7 @@ using a search term.
 
 <!--more-->
 
-**NOTE**: Windows and Mac users may be able to build the example programs
+**NOTE**: Windows and Mac users should be able to build the example programs
 here by using [Vala for Windows](http://valainstaller.sourceforge.net/)
 and [Homebrew](http://brew.sh/) respectively, but I haven't tested it,
 so YMMV.
@@ -30,9 +30,9 @@ trying to build:
 <br>
 
 Functionally, this app isn't too complicated. You type in a search term,
-hit Enter, and it will look up and display a random GIF matching your query.
-Giphy provides an endpoint for this, so all we have to do is build the UI
-around it.
+hit Enter, and it will look up and display a random GIF matching your query
+along with the URL. Giphy provides an endpoint for this, so all we have to
+do is build the UI around it.
 
 ## Setting Up
 
@@ -42,7 +42,7 @@ basics of using a command line to compile code.
 
 To begin, you will need to install the Vala compiler (I'm using 0.28.1), and
 development libraries for the following packages (my version listed as well,
-but other versions may work too):
+but other versions should work too):
 
 1. `gtk+-3.0` (3.16.7)
 2. `libsoup-2.4` (2.50.0)
@@ -504,6 +504,163 @@ about as if everything was happening synchronously.
 If you run the example code for this part, type in a search term, and hit
 Enter, you should eventually see Giphy's API output in your terminal, while
 the GUI stays 100% responsive to the user.
+
+# Part III: Decode, Download, Display
+
+(the source for this section can be found [here][code3])
+
+The previous section left us with an app that should successfully query
+Giphy's API and get a result. The first thing we need to do after that
+is figure out how to use it!
+
+Like many web services, Giphy's result is serialized as JSON, so reading
+it isn't too tricky; we just need to pull in the `json-glib` library
+(this code replaces the "read the response into a buffer" step in the
+previous implementation, right after we retrieve the response stream):
+
+{{<highlight vala>}}
+var parser = new Json.Parser();
+
+// Read the JSON data and extract its root.
+yield parser.load_from_stream_async(stream, null);
+var root = parser.get_root().get_object();
+
+// Verify that the response status is 200 OK.
+var meta = root.get_object_member("meta");
+var status = meta.get_int_member("status");
+if (status != 200) {
+    // We received an unexpected response, so report the error.
+    this.search_end(
+        null,
+        new GiphyError.QUERY(meta.get_string_member("msg"))
+    );
+    return;
+}
+
+var data = root.get_member("data");
+
+// Quick sanity check. Giphy returns an empty array if
+// there were no results.
+if (data.get_node_type() != Json.NodeType.OBJECT) {
+    this.search_end(null, new GiphyError.NO_RESULT("No result."));
+    return;
+}
+
+var url = data.get_object().get_string_member("image_url");
+this.search_end(url, null);
+{{</highlight>}}
+
+([format](https://github.com/Giphy/GiphyAPI#sample-response-random) of
+the expected response)
+
+One new thing you'll notice here is the use of a `GiphyError` type. That's
+quickly and easily defined by creating a new error domain, which is
+essentially Vala's method of creating new Exception types:
+
+{{<highlight vala>}}
+/*
+ * Define a custom error type so that we can report an error if
+ * the response doesn't meet our expectations.
+ */
+errordomain GiphyError {
+	QUERY,
+	NO_RESULT
+}
+{{</highlight>}}
+
+Huzzah, now our `search_end` signal will return the URL to a `.gif` file!
+There's just a couple things left to do: download it, and display it.
+
+## Download Me a River
+
+For downloading it, we'll add a couple more signals:
+
+{{<highlight vala>}}
+protected signal void download_begin(string url);
+protected signal void download_progress(double percent);
+protected signal void download_end(
+    Gdk.PixbufAnimation? animation,
+    Error? error
+);
+{{</highlight>}}
+
+We're following the exact same pattern as we did before, except this time,
+we've added a progress signal. With querying an API for JSON data, there's
+really no way of knowing how long we can expect to wait for a response, and
+once the server's begun responding, the data is actually quite small. The image
+itself is a much bigger chunk of data, and downloading a remote resource is a
+very standard operation, so as soon as we can, it's helpful to report the
+progress.
+
+To start, let's define another asynchronous method for fetching the `.gif`
+(warning: this method is long-ish):
+
+{{<highlight vala>}}
+protected async void download_gif(string url) {
+    this.download_begin(url);
+
+    try {
+        // Create a reference to the remote .gif.
+        var remote_file = GLib.File.new_for_uri(url);
+
+        // Create a new temp file to download it to. We won't
+        // actually use the iostream, but it needs to be non-null.
+        FileIOStream iostream;
+        var tmp_file = GLib.File.new_tmp(
+            "giphy-XXXXXX.gif",
+            out iostream
+        );
+
+        // Asynchronously download the .gif to the temp file.
+        yield remote_file.copy_async(
+            tmp_file,
+            FileCopyFlags.OVERWRITE,
+            Priority.DEFAULT,
+            null, // Cancellable instance
+            (current, total) => {
+                this.download_progress(
+                	(double)current / (double)total
+                );
+            }
+        );
+
+        // File's downloaded, read it into memory.
+        var stream = yield tmp_file.read_async();
+        var image = yield (
+            new Gdk.PixbufAnimation.from_stream_async(stream, null)
+        );
+
+        // We now have the result, signal the application!
+        this.download_end(image, null);
+
+        // We're done with the temp file, so delete it.
+        // Comment this line out if you'd like to keep
+        // everything you've found while searching!
+        // They show up in your sytem temp folder.
+        yield tmp_file.@delete_async();
+    }
+    catch (Error error) {
+        this.download_end(null, error);
+    }
+}
+{{</highlight>}}
+
+Again, this looks like a lot, but there's only a couple steps here:
+
+1. Create a temporary file.
+2. Copy the remote `.gif` into it, signaling progress along the way.
+3. Read the temporary file into memory.
+
+*Note*: there are ways to download the `.gif` directly into program memory,
+but they don't support monitoring the download's progress.
+
+Last, but not least, we need to put together the interface that will
+listen to all these signals, and show us what we want to see.
+
+## It's GUI Time
+
+We have the data, but it's not going to be very useful unless we can
+show it to someone!
 
 
 [code1]: /extras/gtk-giphy/1.tar.gz
