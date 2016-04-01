@@ -1,18 +1,20 @@
 +++
 date = "2016-03-29T22:03:32-05:00"
-title = "Building a Giphy viewer in GTK+"
+title = "Building a Giphy-Searching App in GTK+"
 draft = true
 +++
 
 Web applications get all the hype these days, so why not buck the trend
-and build a desktop application instead? In this post I'm going to use GTK+
-to build a simple desktop program for integrating with Giphy's API.
+and build a desktop application instead? In this post I'm going to use
+Vala and GTK+ to build a simple desktop program for searching Giphy
+using a search term.
 
 <!--more-->
 
-**NOTE**: Windows and Mac users will unfortunately not be able to run
-the example code, but stick around for a little bit anyway and you may
-still learn something neat.
+**NOTE**: Windows and Mac users may be able to build the example programs
+here by using [Vala for Windows](http://valainstaller.sourceforge.net/)
+and [Homebrew](http://brew.sh/) respectively, but I haven't tested it,
+so YMMV.
 
 To whet your appetite, here's a preview of what it is that we're actually
 trying to build:
@@ -34,11 +36,9 @@ around it.
 
 ## Setting Up
 
-This post is going to be focused on GNOME technologies, so you need to be
-running Linux (GTK+ is fully cross-platform, but the other modules used
-here aren't to my knowledge), know the basics of using a command line,
-and how to use your package manager to install runtime libraries and development
-tools.
+This post is going to be focused on GNOME technologies, so you need to have
+the necessary runtime and development libraries installed, and know the
+basics of using a command line to compile code.
 
 To begin, you will need to install the Vala compiler (I'm using 0.28.1), and
 development libraries for the following packages (my version listed as well,
@@ -61,7 +61,7 @@ GNOME API's are actually fairly pleasant to work with.
 If you'd like, this entire application can be written in pure C (as opposed to
 the Qt framework which requires C++), but another benefit of targeting GNOME
 technologies is that it has its own C#-inspired language that compiles to C: Vala.
-As a result, applications written in Vala are just as fast as ones written in C,
+As a result, applications written in Vala are just as fast as those written in C,
 but you get a language whose usability is on par with Python.
 
 ## Running the Examples
@@ -70,18 +70,13 @@ Each part comes with a tar archive containing the source code that summarizes
 what was covered. Each example archive contains two files: the Vala source code,
 and a Makefile. To run each one, extract the contents, `cd` into the folder,
 and execute `make run`. Assuming your development environment is set up correctly,
-then the application will run.
+the application will build and run.
 
 # Part I: Hello World
 
-(the source for this section can be found [here][1])
+(the source for this section can be found [here][code1])
 
-For the first part of this post, we're just going to set up a Hello World application
-that we can further extend. Unlike most GTK+ Hello World applications, though,
-we're going to use some of GNOME's tools for building an actual application, and
-not just a window full of widgets.
-
-GNOME applications are beginning to make a distinction between two main scopes:
+GNOME applications are beginning to make a distinction between two scopes:
 application-level and window-level. It's no big surprise that you can have multiple
 windows of an application open at a time, and GNOME is embracing that usage pattern by
 allowing you to separate the concerns of the application on a global level with those
@@ -90,11 +85,11 @@ that are only concerned with one window at a time.
 For example, imagine that our Giphy Viewer is already built. If you'd like to do
 two searches at the same time, say to compare results, you'd open up two Giphy Viewer
 windows. Each window would contain the search field, and the image result. However,
-application settings should always be the same between the two. If the application
-is made to be more configurable, and the user wants to provide his or her own API key,
-that key should be available to any and all open windows.
+for efficiency's sake, any resources that are shared between the two windows would
+ideally only need to be allocated once. Plus, it usually makes more sense to handle
+application configuration globally.
 
-As a result, the Hello World is broken down roughly into three sections:
+Because of this, the application will be broken down into three parts:
 
 {{<highlight vala>}}
 public class Window : Gtk.ApplicationWindow {
@@ -113,7 +108,7 @@ int main(string[] args) {
 From top-to-bottom, these sections are:
 
 1. The application's `Window` class. This represents a single open instance of your
-   application.
+   application, and will contain the bulk of the code when we're finished.
 2. The application's `Application` class. This represents the global, application-wide
    state of your application.
 3. The `main` method, which is the entrypoint for Vala programs. This part is already
@@ -124,9 +119,7 @@ Note that Vala's syntax means that `Window` extends the `ApplicationWindow` clas
 in the `Gtk` namespace, and `Application` extends the `Application` class defined in the
 `Gtk` namespace.
 
-The `Window` class' Hello World implementation is the simpler of the two, so let's
-cover that one first:
-
+Now let's see how the window and application are defined:
 
 {{<highlight vala>}}
 public class Window : Gtk.ApplicationWindow {
@@ -137,14 +130,12 @@ public class Window : Gtk.ApplicationWindow {
 }
 {{</highlight>}}
 
-The `Gtk.ApplicationWindow` class requires a constructor that takes an instance of a
-`Gtk.Application`, so the constructor takes our custom `Application` as its only
-parameter.
+Note that we define the constructor to accept an instance of our `Application`.
 
 The `Object(...)` line is a little weird for those unfamiliar with GObject and Vala,
 but the short of it is that it's Vala's syntax for assigning multiple properties at
-once during construction. In this example, we specify the window's application
-instance, and a title. Lastly, we tell GTK+ to show the window.
+once during construction. In this example, we just specify the window's application
+instance (required) and a title (optional). Lastly, we tell GTK+ to show the window.
 
 `Application` is similarly short:
 
@@ -156,17 +147,372 @@ public class Application : Gtk.Application {
             flags: ApplicationFlags.FLAGS_NONE
         );
     }
+
+    protected override void activate() {
+        new Window(this);
+    }
 }
 {{</highlight>}}
 
 `Application` requires two properties to be filled in: a global application id,
-and some flags. Note that the application id can be whatever you want, so long
-as it's unique. 99% of the time, you'll probably want `FLAGS_NONE` for the
-application flags, but there are some behavioral adjustments you can make to
-the application as a whole using the [flags](http://valadoc.org/#!api=gio-2.0/GLib.ApplicationFlags).
+and a set of application flags. Note that the application id can be whatever you want, so long
+as it's unique. Most of the time, you'll probably just want `FLAGS_NONE` for the
+application flags, but there are some [adjustments][application-flags]
+you can make to the application's behavior by specifying additional ones.
 
-If you run this application, you should see a window pop up:
+If you run this, you should see a window pop up:
 
 {{< figure src="/images/gtk-giphy/gtk-hello-world.png" class="regular" >}}
 
-[1]: /extras/gtk-giphy/1.tar.gz
+# Part II: Actions, Signals, and HTTP
+
+(the source for this section can be found [here][code2])
+
+Okay, now we can start getting in to the fun stuff. First, let's add a simple text
+entry widget to the window so that we can start playing with it:
+
+{{<highlight vala>}}
+public class Window : Gtk.ApplicationWindow {
+    protected Gtk.Entry search_entry;
+
+    public Window(Application app) {
+        Object(application: app, title: "Search Giphy");
+
+        this.search_entry = new Gtk.Entry();
+        this.add(this.search_entry);
+
+        this.show_all();
+    }
+}
+{{</highlight>}}
+
+If you run this now, you should see a smaller window composed entirely of a
+single text entry field. Obviously not ideal for the final design, but it's all we
+need to move on to learning about actions and signals.
+
+## Signals (not the Unix kind)
+
+GLib signals are the means by which GTK+ applications operate. Since it's an event-driven
+toolkit, the application will sit idle until some event occurs that requires it
+to take action. Every single action you take, such as pressing a key or moving the
+mouse, generates a signal, and every signal can have callbacks connected to it (not
+unlike event listeners in Javascript). Most of the signals emitted during an application's
+lifetime will be ones defined by GTK+ itself, but it's also possible to define your own,
+essentially utilizing GLib itself as a general-purpose notification system.
+
+In the above code, we create a new text entry widget and add it to the window.
+However, it's not very useful unless we can react to it; in this case, we want to know
+when the user presses Enter. Since this isn't Javascript (zing), all we need to do
+is connect a callback to the entry's `activate` signal:
+
+{{<highlight vala>}}
+this.search_entry = new Gtk.Entry();
+
+// Listen for the user's Enter key.
+this.search_entry.activate.connect(() => {
+    stdout.printf(
+        "search entry powers, activate! form of: %s!\n",
+        this.search_entry.get_text()
+    );
+});
+
+this.add(this.search_entry);
+{{</highlight>}}
+
+Note how the syntax here works for listening to a signal. Signals are available directly
+as properties of the object (unlike in C, where signals are referenced as strings),
+so we add a callback by calling the signal's `connect()` method and providing it one.
+The callback provided in this example uses Vala's [closure syntax][closures], but it can
+be a function reference too. Inside the callback, we print out a message using the value
+of the text field.
+
+## Actions
+
+Now that we can react to user input, we need to figure out how exactly to do that.
+In addition to custom signals, GLib also provides a way to define what *actions*
+can be taken by our application. An [action][action] represents a higher-level view of
+user input than signals do, and are also used to build application and window menus. We
+won't be building any menus here, but we still want to formalize the action in order to
+decouple it from the widget.
+
+At the top of the `Window` constructor, let's define an action. Note that this is intended
+to be a window-level action, and not an application-level one:
+
+{{<highlight vala>}}
+public Window(Application app) {
+    Object(application: app, title: "Search Giphy");
+
+    // Register window actions.
+    // This defines an action called "search-random"
+    // that exepects a string parameter.
+    var search_random = new SimpleAction(
+        "search-random", VariantType.STRING
+    );
+    search_random.activate.connect(this.search_random_cb);
+    this.add_action(search_random);
+
+    // Search entry code goes here.
+    ...
+}
+
+protected void search_random_cb(Variant? parameter) {
+    ...
+}
+{{</highlight>}}
+
+Not terribly difficult. Each action requires a name (by convention, one that's hyphenated
+and lower-case), and the type of the parameter that expects, which can be `null` if it
+doesn't expect any parameters. The action's `activate` signal is then connected to the
+`search_random_cb` method, and the action is registered to the window.
+
+Note the use of `Variant` and `VariantType` in this code. Because Vala compiles to C; and in
+particular, compiles to GObject-based C; action parameters are provided as a [Variant][variant].
+When we define the action, we tell GLib that its parameter should be a `Variant` that contains
+a string value, and in the callback, we take a single value of type `Variant?`. The additional
+question mark simply means that it's a *nullable* value.
+
+Even though we defined the action as one that takes a string, we still need to use the `Variant?`
+type in the action callback, otherwise the code won't compile. Fortunately, we can use assertions
+to make the intent of this function clear, without having to scroll through the code to locate
+the original action definition:
+
+{{<highlight vala>}}
+protected void search_random_cb(Variant? parameter)
+    requires(parameter != null)
+    requires(parameter.is_of_type(VariantType.STRING))
+{
+    // String value accessed via `parameter.get_string()`.
+    ...
+}
+{{</highlight>}}
+
+This is a feature that Vala calls [contract programming][contract], and it's a handy way to make
+sure that any unexpected conditions, such as invoking the action with an invalid parameter type,
+are called out as such, resulting in a much clearer and easy-to-understand error message.
+
+Now that we have an invokable action, we can go back to the search entry code and tell the
+application to invoke our new action whenever we receive some user input. We can tell GLib to
+emit a signal by calling it as if it were a function:
+
+{{<highlight vala>}}
+// Invoke the "search-random" action when the user hits Enter.
+this.search_entry.activate.connect(() => {
+    // Emit the action's "activate" signal, providing the search
+    // entry's contents as its parameter.
+    search_random.activate(this.search_entry.get_text());
+});
+{{</highlight>}}
+
+## Defining Custom Signals
+
+We defined the "search-random" action as a way to decouple it from the widget that actually kicks
+it off. Now we're running into the reverse problem; how do you update the application's interface
+based on the results of an action without re-coupling the action back to its widgets? Answer: define
+[custom signals][signals] that will be emitted by the action, and listened to by the widgets.
+
+Let's define a couple signals that will come in handy later:
+
+{{<highlight vala>}}
+public signal void search_begin(string tag);
+public signal void search_end(string? url, Error? e);
+{{</highlight>}}
+
+Defining a custom signal only takes one line of code, which is its name and signature.
+Once they're defined, they can be listened to with `.connect()` and emitted by calling them
+as if they were regular functions.
+
+These signals answer two questions that the interface will care about: when is a search being
+kicked off, and when has the search ended? In part three, we'll cover how to listen to these
+signals to update the UI; for now, we're strictly interested in how and when they're emitted.
+Note that the parameter names indicate that we want to search Giphy by tag, and we want the result
+as a URL to a `.gif` image.
+
+## Searching Giphy
+
+Before we get started implementing the "search-random" action, we need to make one important
+change to the signature of the callback:
+
+{{<highlight vala>}}
+protected async void search_random_cb(Variant? parameter)
+    requires(parameter != null)
+    requires(parameter.is_of_type(VariantType.STRING))
+{
+    ...
+}
+{{</highlight>}}
+
+Adding the `async` keyword identifies this method as an [*asynchronous*][async] one.
+Because the whole point of `search_random_cb()` is to query Giphy's API, it needs to be
+asynchronous in order to avoid locking up the whole GUI while waiting for results.
+Writing asynchronous code in Vala is extremely similar to plain ol' synchronous code,
+and is exactly the same for the parts that aren't themselves dealing with other asynchronous
+code.
+
+First, let's define the basic structure of the callback:
+
+{{<highlight vala>}}
+protected async void search_random_cb(Variant? parameter)
+    requires(parameter != null)
+    requires(parameter.is_of_type(VariantType.STRING))
+{
+    var tag = parameter.get_string();
+    this.search_begin(tag);
+
+    // Capture any errors that may be thrown during the search.
+    try {
+        string url = ...
+        this.search_end(url, null);
+    }
+    catch (Error error) {
+        this.search_end(null, error);
+    }
+}
+{{</highlight>}}
+
+This sets up the action to properly invoke the `search_begin` and `search_end` signals.
+At the beginning of the search, we invoke `search_begin` with the search term we'll be
+using. Later on, no matter what happens, `search_end` will be invoked, either with the
+URL we want and a `null` error, or a `null` URL and an error value.
+
+That's all we care about as far as result and error handling. Displaying either the
+resulting `.gif` or an error message is a task for the GUI, which we're not interested
+in for the moment.
+
+## Introducing Soup
+
+`libsoup` is GNOME's HTTP client/server library that integrates directly with GLib,
+which makes it very easy to use. To use it, we first need to create a session instance.
+Soup sessions are a great example of a resource that can be shared across all instances
+of the application; unless you're building something that requires multiple independent
+authentication contexts, it's best to define it as part of `Application` and not `Window`.
+
+Let's rewrite our `Application` class a little bit:
+
+{{<highlight vala>}}
+public class Application : Gtk.Application {
+    /*
+     * A Soup session for making HTTP requests. It's part of the
+     * global application so that it can be reused by any window.
+     */
+    public Soup.Session session { get; private set; }
+
+    /*
+     * Declare a couple read-only properties. In a real-world
+     * application, these would be configurable application
+     * settings using something like GSettings.
+     */
+    public unowned string giphy_host {
+        get {
+            return "http://api.giphy.com";
+        }
+    }
+
+    /*
+     * Giphy's public API key.
+     */
+    public unowned string giphy_api_key {
+        get {
+            return "dc6zaTOxFJmzC";
+        }
+    }
+
+    public Application() {
+        Object(
+            application_id: "com.damienradtke.giphy-searcher",
+            flags: ApplicationFlags.FLAGS_NONE
+        );
+        // Create a libsoup session.
+        this.session = new Soup.Session();
+    }
+
+    protected override void activate() {
+        new Window(this);
+    }
+}
+{{</highlight>}}
+
+Notice how I not only added the Soup session instance that we wanted,
+but I also snuck in a couple properties that will be used later on.
+
+Now that we have a session that we can use, let's revisit `search_random_cb`
+and finish up its implementation. Note how we access the global `Application`
+instance using the window's `application` property to retrieve global
+properties and access the global Soup session:
+
+{{<highlight vala>}}
+protected async void search_random_cb(Variant? parameter)
+    requires(parameter != null)
+    requires(parameter.is_of_type(VariantType.STRING))
+{
+    var tag = parameter.get_string();
+    this.search_begin(tag);
+
+    var app = (Application)this.application;
+    var uri = new Soup.URI(app.giphy_host + "/v1/gifs/random");
+    uri.set_query_from_fields(
+        "api_key", app.giphy_api_key,
+        "tag", tag
+    );
+
+    try {
+        // Send a request to the endpoint and open up the response
+        // stream, wrapping it with a BufferedInputStream to make
+        // reading it easier.
+        var req = app.session.request(uri.to_string(false));
+        var stream = new BufferedInputStream(
+            yield req.send_async(null)
+        );
+
+        // Asynchronously read the data from the input stream into
+        // a string builder. Later on, this data will need to be
+        // parsed as JSON so that we can get a .gif URL from it.
+        var result = new StringBuilder();
+        ssize_t size;
+        while ((size = yield stream.fill_async(-1)) > 0) {
+            result.append_len((string)stream.peek_buffer(), size);
+        }
+
+        // Notify the window that a search has completed.
+        this.search_end((string)result.data, null);
+    }
+    catch (Error error) {
+        this.search_end(null, error);
+    }
+}
+{{</highlight>}}
+
+There's a lot going on here, but it's actually not very complicated.
+This code can be thought of as having three parts:
+
+1. Build the request URI.
+2. Send the request and wait for a response.
+3. Read the response into a buffer.
+
+Building the URI uses Soup's `URI` type to add query parameters, which
+is safer and more reliable than simply appending to a string, but is
+otherwise very straightforward.
+
+Now, note the use of the `yield` keyword, each one followed by a method
+that ends in `_async`. Asynchronous Vala code works by running the method
+as normal until it encounters a `yield`; when it finds one, it calls the
+following method in a way that allows the application to focus on other
+things until that call is complete. It essentially behaves the same as if
+the code were written with manual callbacks, but the callbacks are all
+flattened into a single function, making it as easy to write and reason
+about as if everything was happening synchronously.
+
+If you run the example code for this part, type in a search term, and hit
+Enter, you should eventually see Giphy's API output in your terminal, while
+the GUI stays 100% responsive to the user.
+
+
+[code1]: /extras/gtk-giphy/1.tar.gz
+[code2]: /extras/gtk-giphy/2.tar.gz
+[code3]: /extras/gtk-giphy/3.tar.gz
+[closures]: https://wiki.gnome.org/Projects/Vala/Tutorial#Anonymous_Methods_.2BAC8_Closures
+[application-flags]: http://valadoc.org/#!api=gio-2.0/GLib.ApplicationFlags
+[signals]: https://wiki.gnome.org/Projects/Vala/Tutorial#Signals
+[action]: http://valadoc.org/#!api=gio-2.0/GLib.Action
+[variant]: http://valadoc.org/#!api=glib-2.0/GLib.Variant
+[contract]: https://wiki.gnome.org/Projects/Vala/Tutorial#Assertions_and_Contract_Programming
+[async]: https://wiki.gnome.org/Projects/Vala/Tutorial#Asynchronous_Methods
