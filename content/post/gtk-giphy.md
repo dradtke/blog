@@ -45,7 +45,9 @@ development libraries for the following packages (my version listed as well,
 but other versions should work too):
 
 1. `gtk+-3.0` (3.16.7)
+
 2. `libsoup-2.4` (2.50.0)
+
 3. `json-glib-1.0` (1.0.4)
 
 You can make sure they're installed properly by running `pkg-config --modversion
@@ -109,8 +111,10 @@ From top-to-bottom, these sections are:
 
 1. The application's `Window` class. This represents a single open instance of your
    application, and will contain the bulk of the code when we're finished.
+
 2. The application's `Application` class. This represents the global, application-wide
    state of your application.
+
 3. The `main` method, which is the entrypoint for Vala programs. This part is already
    basically complete, as all it does is instantiate the `Application` class and start
    it running.
@@ -485,7 +489,9 @@ There's a lot going on here, but it's actually not very complicated.
 This code can be thought of as having three parts:
 
 1. Build the request URI.
+
 2. Send the request and wait for a response.
+
 3. Read the response into a buffer.
 
 Building the URI uses Soup's `URI` type to add query parameters, which
@@ -648,7 +654,9 @@ protected async void download_gif(string url) {
 Again, this looks like a lot, but there's only a couple steps here:
 
 1. Create a temporary file.
+
 2. Copy the remote `.gif` into it, signaling progress along the way.
+
 3. Read the temporary file into memory.
 
 *Note*: there are ways to download the `.gif` directly into program memory,
@@ -660,7 +668,174 @@ listen to all these signals, and show us what we want to see.
 ## It's GUI Time
 
 We have the data, but it's not going to be very useful unless we can
-show it to someone!
+show it to someone! It is possible to use a design tool like [Glade][glade]
+to help out (and for your bigger, more serious projects, it's likely the
+best option), but instead, we're just going to lump the whole UI into
+a single block of code.
+
+First, let's think about what we need. At its simplest, all we need
+is a search box, a place to put the image, and a place to put the image's
+URL. That corresponds to these widgets:
+
+1. [Entry](http://valadoc.org/#!api=gtk+-3.0/Gtk.Entry)
+
+2. [Image](http://valadoc.org/#!api=gtk+-3.0/Gtk.Image)
+
+3. [Label](http://valadoc.org/#!api=gtk+-3.0/Gtk.Label)
+
+4. [Box](http://valadoc.org/#!api=gtk+-3.0/Gtk.Box) (for proper positioning
+   of the other widgets)
+
+However, in order to make the app a lot more user-friendly, I'm going to
+throw in a couple more:
+
+5. [ProgressBar](http://valadoc.org/#!api=gtk+-3.0/Gtk.ProgressBar)
+6. [Stack](http://valadoc.org/#!api=gtk+-3.0/Gtk.Stack)
+
+The progress bar will be used to display search/download progress, and the
+stack is a layout widget that makes it easy to toggle the UI between
+two or more different states. In this case, we want to replace the image
+with the progress bar when a search is underway.
+
+First let's define everything we need as instance variables, so that they'll
+be available to the methods that need them:
+
+{{<highlight vala>}}
+protected Gtk.Entry search_entry;
+protected Gtk.Stack image_stack;
+protected Gtk.Image image_view;
+protected Gtk.Entry image_view_url;
+protected Gtk.ProgressBar image_view_loading;
+{{</highlight>}}
+
+And now, inside the Window constructor (warning: this is a big chunk
+of code, but all it's doing is creating widgets):
+
+{{<highlight vala>}}
+/* -- Build the UI -- */
+
+// Search Entry
+this.search_entry = new Gtk.Entry();
+this.search_entry.activate.connect(() => {
+    search_random.activate(this.search_entry.get_text());
+});
+this.search_entry.set_icon_from_icon_name(
+    Gtk.EntryIconPosition.PRIMARY,
+    "search"
+);
+this.search_entry.set_icon_from_icon_name(
+    Gtk.EntryIconPosition.SECONDARY,
+    "edit-clear"
+);
+// Clear the field when the "edit-clear" icon is clicked.
+this.search_entry.icon_press.connect((pos, event) => {
+    if (pos == Gtk.EntryIconPosition.SECONDARY) {
+        this.search_entry.set_text("");
+    }
+});
+
+// Image and Stack
+this.image_stack = new Gtk.Stack();
+this.image_view = new Gtk.Image();
+this.image_view_loading = new Gtk.ProgressBar();
+this.image_view_url = new Gtk.Entry();
+this.image_view_url.set_property("editable", false);
+this.image_view_url.set_property("can_focus", false);
+this.image_view_loading.set_show_text(true);
+var image_box = new Gtk.Box(Gtk.Orientation.VERTICAL, 6);
+image_box.pack_start(this.image_view);
+var image_url_box = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 6);
+image_url_box.pack_start(new Gtk.Label("URL:"), false, false, 0);
+image_url_box.pack_start(this.image_view_url);
+image_box.pack_start(image_url_box, false, false, 0);
+this.image_stack.add_named(image_box, "image");
+this.image_stack.add_named(this.image_view_loading, "loading");
+
+// Main window box
+var window_box = new Gtk.Box(Gtk.Orientation.VERTICAL, 6);
+window_box.margin = 6;
+window_box.pack_start(this.search_entry, false, false, 0);
+window_box.pack_start(this.image_stack);
+this.add(window_box);
+
+this.show_all();
+this.image_stack.set_visible(false);
+{{</highlight>}}
+
+*Phew*. A couple things to note:
+
+1. Icons were added to the search field, and in addition, the value
+   of the field should be cleared out when the "clear" icon is clicked.
+
+2. The URL display also uses an `Entry`, but has two properties on it
+   set so that it behaves as a read-only field.
+
+3. The last line hides the whole stack because we don't want to show
+   anything until we've started searching for our first image.
+
+4. 6 is my go-to margin value, but feel free to adjust it to your liking.
+   The human interface guidelines have some [suggestions][spacing] for
+   how far apart to place your widgets.
+
+Here's what the result of this looks like:
+
+{{< figure src="/images/gtk-giphy/ui-1.png" class="regular" >}}
+
+Now we can start listening to signals to update everything accordingly!
+From a high level, here's what the app should do, in order of the signal
+calls that we can expect:
+
+1. `search_begin`: Show the progress bar and animate it to indicate that
+   activity is happening.
+
+2. `search_end`: If the search failed, show an error; otherwise, start
+   downloading the result.
+
+3. `download_begin`: Update the progress bar's text to show that we're
+   downloading, and set its value to 0 (since now we'll have concrete
+   progress to show).
+
+4. `download_progress`: Update the progress bar.
+
+5. `download_end`: If the download failed, show an error; otherwise,
+   show the image.
+
+In order to avoid putting all of the logic for these events inside the
+`Window` constructor, let's define some instance methods...
+
+{{<highlight vala>}}
+protected void on_search_begin(string tag) {
+    ...
+}
+
+protected void on_search_end(string? url, Error? error) {
+    ...
+}
+
+protected void on_download_begin(string url) {
+    ...
+}
+
+protected void on_download_progress(double percent) {
+    ...
+}
+
+protected void on_download_end(Gdk.PixbufAnimation? animation, Error? error) {
+    ...
+}
+{{</highlight>}}
+
+...and connect the signals to them (this part inside the `Window` constructor):
+
+{{<highlight vala>}}
+/* -- Register Signal Handlers -- */
+
+this.search_begin.connect(this.on_search_begin);
+this.search_end.connect(this.on_search_end);
+this.download_begin.connect(this.on_download_begin);
+this.download_progress.connect(this.on_download_progress);
+this.download_end.connect(this.on_download_end);
+{{</highlight>}}
 
 
 [code1]: /extras/gtk-giphy/1.tar.gz
@@ -673,3 +848,5 @@ show it to someone!
 [variant]: http://valadoc.org/#!api=glib-2.0/GLib.Variant
 [contract]: https://wiki.gnome.org/Projects/Vala/Tutorial#Assertions_and_Contract_Programming
 [async]: https://wiki.gnome.org/Projects/Vala/Tutorial#Asynchronous_Methods
+[glade]: https://glade.gnome.org/
+[spacing]: https://developer.gnome.org/hig/stable/visual-layout.html.en
