@@ -1,5 +1,5 @@
 +++
-date = "2016-03-29T22:03:32-05:00"
+date = "2016-04-04"
 title = "Building a Giphy-Searching App in GTK+ 3"
 +++
 
