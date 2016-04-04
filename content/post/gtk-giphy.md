@@ -1,13 +1,12 @@
 +++
 date = "2016-03-29T22:03:32-05:00"
 title = "Building a Giphy-Searching App in GTK+ 3"
-draft = true
 +++
 
 Web applications get all the hype these days, so why not buck the trend
 and build a desktop application instead? In this post I'm going to use
-Vala and GTK+ to build a simple desktop program for searching Giphy
-using a search term.
+Vala and GTK+ to build a simple desktop program for searching Giphy,
+the popular GIF database.
 
 <!--more-->
 
@@ -28,6 +27,8 @@ trying to build:
   <a href="/extras/gtk-giphy/giphy-viewer.sha1" download>checksum</a>
 </div>
 <br>
+
+Full source is provided at the end of Part III.
 
 Functionally, this app isn't too complicated. You type in a search term,
 hit Enter, and it will look up and display a random GIF matching your query
@@ -76,16 +77,14 @@ the application will build and run.
 
 # Part I: Hello World
 
-(the source for this section can be found [here][code1])
-
 GNOME applications are beginning to make a distinction between two scopes:
 application-level and window-level. It's no big surprise that you can have multiple
 windows of an application open at a time, and GNOME is embracing that usage pattern by
 allowing you to separate the concerns of the application on a global level with those
 that are only concerned with one window at a time.
 
-For example, imagine that our Giphy Viewer is already built. If you'd like to do
-two searches at the same time, say to compare results, you'd open up two Giphy Viewer
+For example, imagine that our app is already built. If you'd like to do
+two searches at the same time, say to compare results, you'd open up two
 windows. Each window would contain the search field, and the image result. However,
 for efficiency's sake, any resources that are shared between the two windows would
 ideally only need to be allocated once. Plus, it usually makes more sense to handle
@@ -109,11 +108,10 @@ int main(string[] args) {
 
 From top-to-bottom, these sections are:
 
-1. The application's `Window` class. This represents a single open instance of your
+1. The `Window` class. This represents a single open instance of the
    application, and will contain the bulk of the code when we're finished.
 
-2. The application's `Application` class. This represents the global, application-wide
-   state of your application.
+2. The `Application` class. This represents the global state of the application.
 
 3. The `main` method, which is the entrypoint for Vala programs. This part is already
    basically complete, as all it does is instantiate the `Application` class and start
@@ -134,7 +132,8 @@ public class Window : Gtk.ApplicationWindow {
 }
 {{</highlight>}}
 
-Note that we define the constructor to accept an instance of our `Application`.
+Note that we define the constructor to accept an instance of our `Application`, through
+which we'll be able to reference any available global state.
 
 The `Object(...)` line is a little weird for those unfamiliar with GObject and Vala,
 but the short of it is that it's Vala's syntax for assigning multiple properties at
@@ -159,18 +158,20 @@ public class Application : Gtk.Application {
 {{</highlight>}}
 
 `Application` requires two properties to be filled in: a global application id,
-and a set of application flags. Note that the application id can be whatever you want, so long
-as it's unique. Most of the time, you'll probably just want `FLAGS_NONE` for the
-application flags, but there are some [adjustments][application-flags]
-you can make to the application's behavior by specifying additional ones.
+and a set of application flags. Note that the application id can be whatever you want,
+so long as it's unique, and conforms to the [application id syntax][appid]. Most of the
+time, you'll probably just want `FLAGS_NONE` for the application flags, but there are some
+[adjustments][application-flags] you can make to the application's behavior by adding
+additional flags, separated by `|`.
 
 If you run this, you should see a window pop up:
 
 {{< figure src="/images/gtk-giphy/gtk-hello-world.png" class="regular" >}}
 
-# Part II: Actions, Signals, and HTTP
+<br>
+<p style="text-align: center;"><a href="/extras/gtk-giphy/gtk-giphy-part1.tar.gz">download source</a></p>
 
-(the source for this section can be found [here][code2])
+# Part II: Actions, Signals, and HTTP
 
 Okay, now we can start getting in to the fun stuff. First, let's add a simple text
 entry widget to the window so that we can start playing with it:
@@ -196,8 +197,8 @@ need to move on to learning about actions and signals.
 
 ## Signals (not the Unix kind)
 
-GLib signals are the means by which GTK+ applications operate. Since it's an event-driven
-toolkit, the application will sit idle until some event occurs that requires it
+Signals are the means by which GTK+ applications operate. GLib is an event-driven
+toolkit, which means the application will sit idle until some event occurs that requires it
 to take action. Every single action you take, such as pressing a key or moving the
 mouse, generates a signal, and every signal can have callbacks connected to it (not
 unlike event listeners in Javascript). Most of the signals emitted during an application's
@@ -270,7 +271,7 @@ doesn't expect any parameters. The action's `activate` signal is then connected 
 `search_random_cb` method, and the action is registered to the window.
 
 Note the use of `Variant` and `VariantType` in this code. Because Vala compiles to C; and in
-particular, compiles to GObject-based C; action parameters are provided as a [Variant][variant].
+particular, GObject-based C; action parameters are provided as a [Variant][variant].
 When we define the action, we tell GLib that its parameter should be a `Variant` that contains
 a string value, and in the callback, we take a single value of type `Variant?`. The additional
 question mark simply means that it's a *nullable* value.
@@ -290,7 +291,7 @@ protected void search_random_cb(Variant? parameter)
 }
 {{</highlight>}}
 
-This is a feature that Vala calls [contract programming][contract], and it's a handy way to make
+This is a feature of Vala called [contract programming][contract], and it's a handy way to make
 sure that any unexpected conditions, such as invoking the action with an invalid parameter type,
 are called out as such, resulting in a much clearer and easy-to-understand error message.
 
@@ -384,11 +385,12 @@ in for the moment.
 
 ## Introducing Soup
 
-`libsoup` is GNOME's HTTP client/server library that integrates directly with GLib,
-which makes it very easy to use. To use it, we first need to create a session instance.
+`libsoup` is GNOME's HTTP client/server library that integrates directly with GLib. To
+use it, we first need to create a session instance.
 Soup sessions are a great example of a resource that can be shared across all instances
 of the application; unless you're building something that requires multiple independent
-authentication contexts, it's best to define it as part of `Application` and not `Window`.
+authentication contexts, it's best to define it as part of `Application` and not `Window`,
+so that we only need to allocate one.
 
 Let's rewrite our `Application` class a little bit:
 
@@ -401,9 +403,7 @@ public class Application : Gtk.Application {
     public Soup.Session session { get; private set; }
 
     /*
-     * Declare a couple read-only properties. In a real-world
-     * application, these would be configurable application
-     * settings using something like GSettings.
+     * Declare a couple read-only properties.
      */
     public unowned string giphy_host {
         get {
@@ -425,6 +425,7 @@ public class Application : Gtk.Application {
             application_id: "com.damienradtke.giphy-searcher",
             flags: ApplicationFlags.FLAGS_NONE
         );
+
         // Create a libsoup session.
         this.session = new Soup.Session();
     }
@@ -511,9 +512,10 @@ If you run the example code for this part, type in a search term, and hit
 Enter, you should eventually see Giphy's API output in your terminal, while
 the GUI stays 100% responsive to the user.
 
-# Part III: Decode, Download, Display
+<br>
+<p style="text-align: center;"><a href="/extras/gtk-giphy/gtk-giphy-part2.tar.gz">download source</a></p>
 
-(the source for this section can be found [here][code3])
+# Part III: Decode, Download, Display
 
 The previous section left us with an app that should successfully query
 Giphy's API and get a result. The first thing we need to do after that
@@ -582,21 +584,21 @@ There's just a couple things left to do: download it, and display it.
 For downloading it, we'll add a couple more signals:
 
 {{<highlight vala>}}
-protected signal void download_begin(string url);
-protected signal void download_progress(double percent);
-protected signal void download_end(
+public signal void download_begin(string url);
+public signal void download_progress(double percent);
+public signal void download_end(
     Gdk.PixbufAnimation? animation,
     Error? error
 );
 {{</highlight>}}
 
 We're following the exact same pattern as we did before, except this time,
-we've added a progress signal. With querying an API for JSON data, there's
-really no way of knowing how long we can expect to wait for a response, and
-once the server's begun responding, the data is actually quite small. The image
-itself is a much bigger chunk of data, and downloading a remote resource is a
-very standard operation, so as soon as we can, it's helpful to report the
-progress.
+we've added a progress signal. Rather than use Soup directly, though, the
+download is going to utilize GIO (GLib's virtual filesystem API),
+which enables progress updates for file transfers, including downloads.
+Since the file is much bigger than the API's JSON response, it's good
+practice to update the user with some concrete percentages as soon as we
+have them available.
 
 To start, let's define another asynchronous method for fetching the `.gif`
 (warning: this method is long-ish):
@@ -659,8 +661,9 @@ Again, this looks like a lot, but there's only a couple steps here:
 
 3. Read the temporary file into memory.
 
-*Note*: there are ways to download the `.gif` directly into program memory,
-but they don't support monitoring the download's progress.
+*Note*: there is a way to download the `.gif` directly into program memory,
+which is a little more efficient, but that approach doesn't support monitoring
+the download's progress.
 
 Last, but not least, we need to put together the interface that will
 listen to all these signals, and show us what we want to see.
@@ -669,9 +672,9 @@ listen to all these signals, and show us what we want to see.
 
 We have the data, but it's not going to be very useful unless we can
 show it to someone! It is possible to use a design tool like [Glade][glade]
-to help out (and for your bigger, more serious projects, it's likely the
-best option), but instead, we're just going to lump the whole UI into
-a single block of code.
+to help out (and for your bigger, more serious projects, it's a better
+option than what I'm doing here), but instead, we're just going to lump
+the whole UI into a single block of code.
 
 First, let's think about what we need. At its simplest, all we need
 is a search box, a place to put the image, and a place to put the image's
@@ -690,6 +693,7 @@ However, in order to make the app a lot more user-friendly, I'm going to
 throw in a couple more:
 
 5. [ProgressBar](http://valadoc.org/#!api=gtk+-3.0/Gtk.ProgressBar)
+
 6. [Stack](http://valadoc.org/#!api=gtk+-3.0/Gtk.Stack)
 
 The progress bar will be used to display search/download progress, and the
@@ -837,10 +841,207 @@ this.download_progress.connect(this.on_download_progress);
 this.download_end.connect(this.on_download_end);
 {{</highlight>}}
 
+For the first part, we want to make a distinction between searching and
+downloading, and when we're searching, we want the progress bar to animate.
+GTK progress bars support two modes of operation: when you know the progress,
+and when you don't. In this case, we won't know the progress until we start
+downloading the image.
 
-[code1]: /extras/gtk-giphy/1.tar.gz
-[code2]: /extras/gtk-giphy/2.tar.gz
-[code3]: /extras/gtk-giphy/3.tar.gz
+We'll add a new boolean instance variable called `searching` so that we know when
+a search is underway, and so when to animate the progress bar:
+
+{{<highlight vala>}}
+protected void on_search_begin(string tag) {
+    // Ensure that the image stack is visible.
+    if (!this.image_stack.visible) {
+        this.image_stack.set_visible(true);
+    }
+    // Show the "loading" child of the stack; this shows
+    // the loading bar and hides the image.
+    this.image_stack.set_visible_child_name("loading");
+    this.image_view_loading.set_text("Searching...");
+    this.searching = true;
+
+    GLib.Timeout.add(100, () => {
+        this.image_view_loading.pulse();
+        return this.searching;
+    });
+}
+{{</highlight>}}
+
+Both progress bar modes require that you call a method on the widget periodically. When
+you have a concrete progress value to report, you call `set_fraction()`,
+providing the progress value to display to the user. But when you just want to
+animate the bar to indicate activity, you call `pulse()`. How often you call the
+former depends on how frequently you receive updates, and how often you call the latter
+is entirely up to you.
+
+The best way to periodically call `pulse()` is to add a new *timeout* callback. This
+requires providing an interval in milliseconds along with your callback. The callback
+function is invoked periodically, using the provided interval, until it returns `false`.
+In the example above, the progress bar will pulse until `this.searching` is set to
+`false`, which will happen right as we transition to downloading the result. The value
+of 100 means that it will pulse 10 times per second; adjusting the value will result
+in either a faster or slower animation.
+
+{{< figure src="/images/gtk-giphy/progress.gif" class="regular" >}}
+
+Now we wait until the request has completed, and hand off the result to be downloaded
+(omitting error display; check out the full source to see how to display a dialog):
+
+{{<highlight vala>}}
+protected void on_search_end(string? url, Error? error) {
+    searching = false;
+    if (error != null) {
+        // Display the error and quit early.
+        ...
+        return;
+    }
+    this.download_gif.begin(url);
+}
+{{</highlight>}}
+
+Simple enough. The `download_gif()` method will take care of emitting the next signal:
+
+{{<highlight vala>}}
+protected void on_download_begin(string url) {
+    this.image_view_url.set_text(url);
+    this.image_view_loading.set_text("Downloading...");
+    this.image_view_loading.set_fraction(0);
+}
+{{</highlight>}}
+
+Here we set the URL field to show what we're downloading, and prepare the progress bar
+to switch modes. Calling `set_fraction(0)` hides the "pulse" progress bar, since we're
+now going to be periodically updating the fraction value.
+
+Actually updating the progress bar is almost laughably simple:
+
+{{<highlight vala>}}
+protected void on_download_progress(double percent) {
+    this.image_view_loading.set_fraction(percent);
+}
+{{</highlight>}}
+
+There's only one step left, and that's to display the `.gif` that we've received.
+For most images, it's enough to call `.set_from_pixbuf()` or equivalent; but we
+want our image to animate, so there are a couple extra steps. You'll notice that
+the result of the download is a `PixbufAnimation`, not just a `Pixbuf`; in order
+to display an animation, we need to iterate through the animation's frames and
+call `.set_from_pixbuf()` for each one.
+
+To help out, we need to add one last instance variable:
+
+{{<highlight vala>}}
+protected Gdk.PixbufAnimationIter gif_iter;
+{{</highlight>}}
+
+And finally, here's how we take the result and animate it:
+
+
+{{<highlight vala>}}
+protected void on_download_end(
+    Gdk.PixbufAnimation? animation,
+    Error? error
+) {
+    if (error != null) {
+        // Display the error and quit early.
+        ...
+        return;
+    }
+    this.gif_iter = animation.get_iter(null);
+    this.image_view.set_from_pixbuf(this.gif_iter.get_pixbuf());
+    this.image_stack.set_visible_child_name("image");
+    this.animate();
+}
+
+protected void animate() {
+    var delay = this.gif_iter.get_delay_time();
+    if (delay == -1) {
+        return;
+    }
+    if (delay < 20) delay = 20; // Minimum value for GIF images.
+    GLib.Timeout.add(delay, () => {
+        if (this.gif_iter == null) {
+            return false;
+        }
+        if (this.gif_iter.advance(null)) {
+            this.image_view.set_from_pixbuf(
+                this.gif_iter.get_pixbuf()
+            );
+        }
+        this.animate();
+        return false;
+    });
+}
+{{</highlight>}}
+
+This code is short, but dense. The callback itself simply creates our iterator
+(freeing any that may already exist, which avoids a memory leak), displays the
+first frame of the image, shows it in the stack, and calls `animate()`.
+The `animate()` method works by using the pixbuf's iterator to do a couple things:
+
+1. Calculate the delay, or how long we need to wait before advancing the image.
+   A value of -1 means that the image is static, and shouldn't advance. Also note
+   that the GIF image format defines 20 as the minimum delay, so we check for that.
+
+2. Set up a timeout using the delay. This timeout returns `false`, ensuring that
+   it is only invoked once.
+
+3. When the timeout occurs, advance the iterator and, if necessary, update the
+   image to use the current pixbuf. Note that we also check to make sure the
+   iterator hasn't been deleted before attempting to use it.
+
+4. After advancing, call `animate()` again to set up for the next frame.
+
+(*Note*: the `on_search_begin()` function should now also have a line setting
+`this.gif_iter` to null, which stops the animation and frees up some resources)
+
+And that's it!
+
+<br>
+<p style="text-align: center;"><a href="/extras/gtk-giphy/gtk-giphy-part3.tar.gz">download source</a></p>
+
+# Summary
+
+Naturally, there's a lot of room for improvement. Here are some ideas for
+improving the app's functionality:
+
+1. Add cancellation support. While an API request or download is processing,
+   a new search request should abort any pending operations. This can be
+   achieved by using the [Cancellable][cancellable] class.
+
+2. Integrate [Settings][gsettings] for application configuration, so that the
+   strings currently hard-coded into the `Application` class are configurable
+   using existing tools. *Bonus:* create a simple "settings" dialog for updating
+   these directly from your app.
+
+3. Add a [Scale][scale] widget below the image for adjusting playback speed
+   by using its value to calculate a [TimeVal][timeval] that can be passed
+   to the iterator's `advance()` method.
+
+4. This post just covered querying Giphy's "random" endpoint for images; try
+   adding support for more of their endpoints, and add a [ComboBox][combobox]
+   next to the search field for choosing which one to use. *Bonus:* for endpoints
+   that return multiple images, figure out a way to scroll through all of the
+   results, downloading each one as it becomes necessary.
+
+# Further Reading
+
+1. [Valadoc][valadoc] for any general-purpose questions about Vala's API's.
+
+2. [Widget Gallery][widgets], for checking out the available widgets.
+
+3. [Human Interface Guidelines][hig], for solid advice on what constitues a good
+   interface.
+
+4. [GNOME Developer Center][devcenter], for many more guides and resources.
+
+<br>
+<p style="text-align: center;">Happy hacking!</p>
+
+
+[appid]: https://wiki.gnome.org/HowDoI/ChooseApplicationID
 [closures]: https://wiki.gnome.org/Projects/Vala/Tutorial#Anonymous_Methods_.2BAC8_Closures
 [application-flags]: http://valadoc.org/#!api=gio-2.0/GLib.ApplicationFlags
 [signals]: https://wiki.gnome.org/Projects/Vala/Tutorial#Signals
@@ -850,3 +1051,12 @@ this.download_end.connect(this.on_download_end);
 [async]: https://wiki.gnome.org/Projects/Vala/Tutorial#Asynchronous_Methods
 [glade]: https://glade.gnome.org/
 [spacing]: https://developer.gnome.org/hig/stable/visual-layout.html.en
+[cancellable]: http://valadoc.org/#!api=gio-2.0/GLib.Cancellable
+[gsettings]: http://valadoc.org/#!api=gio-2.0/GLib.Settings
+[scale]: http://valadoc.org/#!api=gtk+-3.0/Gtk.Scale
+[timeval]: http://valadoc.org/#!api=glib-2.0/GLib.TimeVal
+[combobox]: http://valadoc.org/#!api=gtk+-3.0/Gtk.ComboBox
+[valadoc]: http://valadoc.org/
+[widgets]: https://developer.gnome.org/gtk3/stable/ch03.html
+[hig]: https://developer.gnome.org/hig/stable/
+[devcenter]: https://developer.gnome.org/
