@@ -1,7 +1,6 @@
 +++
 date = "2016-05-31T23:10:28-05:00"
 title = "js/template"
-draft = true
 +++
 
 One of my favorite packages in the Go standard library is
