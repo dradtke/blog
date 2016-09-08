@@ -1,6 +1,7 @@
 
 
 @import url(https://fonts.googleapis.com/css?family=Roboto+Mono:400,700);
+@import url(https://fonts.googleapis.com/css?family=Fira+Sans);
 
 /* Base16 Eighties Colorscheme by Chris Kempson (http://chriskempson.com) */
 
@@ -29,7 +30,7 @@ body {
   color: #f2f0ec;
   line-height: 1.5;
   font-size: 100%;
-  font-family: 'Source Code Pro', monospace;
+  font-family: 'Fira Sans', sans-serif;
 }
 
 .container {
@@ -129,7 +130,7 @@ h5 { font-size: 14px; font-size: .875rem }
 h6 { font-size: 12px; font-size: .75rem }
 
 pre, code {
-  font-family: inherit;
+  font-family: 'Source Code Pro', monospace;
   font-size: inherit;
 }
 

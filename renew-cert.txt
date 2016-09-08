@@ -1,0 +1,1 @@
+1. Run /opt/letsencrypt/letsencrypt-auto
