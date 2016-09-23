@@ -83,10 +83,10 @@ pub fn get_message() -> &'static str {
 {{</highlight>}}
 
 Build the project with Cargo and ensure that it generates a dynamic library
-which will likely appear under `target/debug`. Ensure that the library's extension
-matches your platform's extension for dynamic libraries; if it was built as
-an `.rlib` file, then make sure you have your `[lib]` section set up correctly in
-`Cargo.toml`.
+(which will likely appear under `target/debug`) by checking the library's extension;
+if it was built as an `.rlib` file, then make sure you have your `[lib]` section set
+up correctly in `Cargo.toml`. The correct extension is `.so`, `.dll`, or `.dylib`
+for Linux, Windows, or Mac, respectively.
 
 Okay, we now have a dynamic library that implements our application code.
 Let's see how we can access it.
@@ -112,10 +112,9 @@ extern crate dylib;
 use dylib::DynamicLibrary;
 use std::path::Path;
 
-// Change according to your setup and platform. ".so"
-// files represent dynamic libraries on Linux systems.
-// This path assumes that your working directory at execution
-// time is `main`.
+// Change according to your setup and platform.
+// This path assumes a Linux system, and that your working
+// directory is `main`.
 const LIB_PATH: &'static str = "../app/target/debug/libapp.so";
 
 fn main() {
@@ -128,13 +127,15 @@ fn main() {
 errors more gracefully than just panicking.)
 
 Now that we have a handle to the application library, how do we use it? This part
-is actually a little tricky, since we lose a lot of type information
+is actually a little tricky since we lose a lot of type information
 when crossing process boundaries. The only utility provided for looking
 up a function in a dynamic library is the `symbol()` method, which
 returns a raw pointer to some type that you specify. But what type
 should we specify, and how do we safely dereference the raw pointer?
-After some wrangling with the type system, this is the best approach
-that I've been able to come up with:
+
+There are actually a few ways that you can do this, but
+after some wrangling with the type system, this is what I consider to be
+the best approach:
 
 {{<highlight rust>}}
 // In main(), right after opening the dynamic library.
@@ -152,15 +153,10 @@ result to; in this case, `fn() -> &'static str`, which we know matches
 the signature of the method's implementation, even if the compiler
 doesn't.
 
-This is also why we need to add the `#[no_mangle]` attribute above the
-function definition; the symbols need to remain compatible with the
-C ABI in order to be located and used.
-
-_Aside:_ the above code also works just fine if you change `usize`
-to `fn() -> &'static str`, but the `transmute()` is still required
-in order to remove the "raw pointer" distinction, so using `usize` 
-achieves the same effect without having to specify the function's
-type signature twice.
+Note that this is also why we need to add the `#[no_mangle]` attribute above the
+function definition. By default, the Rust compiler
+[mangles function names](https://en.wikipedia.org/wiki/Name_mangling#Rust),
+which we need to prevent in order to look it up by name.
 
 If all went well, then you should now be able to run the program
 and get the following output:
@@ -220,7 +216,7 @@ loop {
                              .map(|m| m.modified())
     {
         if modified > last_modified {
-            // Reload the application.
+            // TODO: Reload the application.
             last_modified = modified;
         }
     }
@@ -264,7 +260,69 @@ from disk, we need to force the `DynamicLibrary` destructor to run first
 so that the reference count drops to 0, which causes the library to be unloaded
 from memory. _Then_ we can reload it and get the contents as they are on disk.
 
-# Sharing Custom Data
+# The Full Solution
+
+For those of you who skipped straight to the bottom, here's the full solution
+for `main`:
+
+{{<highlight rust>}}
+extern crate dylib;
+
+use dylib::DynamicLibrary;
+use std::path::Path;
+
+const LIB_PATH: &'static str = "../app/target/debug/libapp.so";
+
+fn main() {
+    // Open the application library.
+    let mut app = DynamicLibrary::open(Some(Path::new(LIB_PATH)))
+        .unwrap_or_else(|error| panic!("{}", error));
+
+    // Look up the functions that we want to use.
+    let mut get_message: fn() -> &'static str = unsafe {
+        std::mem::transmute(
+            app.symbol::<usize>("get_message").unwrap()
+        )
+    };
+
+    // Record the time at which it was last modified.
+    let mut last_modified = std::fs::metadata(LIB_PATH).unwrap()
+        .modified().unwrap();
+
+    // Begin looping once per second.
+    let dur = std::time::Duration::from_secs(1);
+    loop {
+        std::thread::sleep(dur);
+        if let Ok(Ok(modified)) = std::fs::metadata(LIB_PATH)
+                                  .map(|m| m.modified())
+        {
+            if modified > last_modified {
+                // The library was updated, reload it.
+                drop(app);
+
+                app = DynamicLibrary::open(Some(Path::new(LIB_PATH)))
+                    .unwrap_or_else(|error| panic!("{}", error));
+
+                get_message = unsafe {
+                    std::mem::transmute(
+                        app.symbol::<usize>("get_message").unwrap()
+                    )
+                };
+
+                last_modified = modified;
+            }
+        }
+
+        // Call into the application library.
+        println!("message: {}", get_message());
+    }
+}
+{{</highlight>}}
+
+Start this running, then modify `app` to print out `G'day, Dylib!` and build it.
+The output of `main` should adjust accordingly without skipping a beat!
+
+# Final Note: Sharing Custom Data
 
 One big problem that any serious use of this technique will quickly run into
 is the sharing of custom data types. Both the application library and the
