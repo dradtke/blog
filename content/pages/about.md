@@ -3,21 +3,8 @@ title  = "About"
 weight = 1
 +++
 
-Good evening,
-
-My name is Damien, and welcome to my blog. Please pull up a chair, pour yourself a glass of whisky,
-and relax as I tell you a tale unlike any other.
-
-----------
-
-{{< figure src="/images/me.jpg" class="me" title="Not pictured: the pot of coffee I consume each morning" >}}
-
-----------
-
-Actually, my tales are likely very similar to ones you've no doubt heard before, but they are
-nonetheless entertaining, and occasionally even educational.
-
-I occupy other parts of the internet, too.
+My name is Damien, and I am a programmer based in Chicago. This is my blog,
+but I occupy other parts of the internet, too:
 
 <br>
 <div style="text-align: center;">
