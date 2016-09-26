@@ -1,7 +1,6 @@
 +++
-date = "2016-09-07"
+date = "2016-09-26"
 title = "Rusty Dynamic Loading"
-draft = true
 +++
 
 # Introduction
@@ -296,13 +295,18 @@ fn main() {
         if let Ok(Ok(modified)) = std::fs::metadata(LIB_PATH)
                                   .map(|m| m.modified())
         {
+            // Check to see if the library has been modified
+            // recently.
             if modified > last_modified {
-                // The library was updated, reload it.
+                // Force the library's destructor to run, to avoid
+                // retrieving a cached handle when reopening.
                 drop(app);
 
+                // Re-open the application library.
                 app = DynamicLibrary::open(Some(Path::new(LIB_PATH)))
                     .unwrap_or_else(|error| panic!("{}", error));
 
+                // Re-look up the functions that we want to use.
                 get_message = unsafe {
                     std::mem::transmute(
                         app.symbol::<usize>("get_message").unwrap()
@@ -313,7 +317,7 @@ fn main() {
             }
         }
 
-        // Call into the application library.
+        // Call your application methods here.
         println!("message: {}", get_message());
     }
 }
@@ -340,4 +344,6 @@ path = "../app"
 
 Then add an `extern crate app;` line at the top of `main/src/main.rs`, and
 you're free to use any custom type defined within the `app` crate in your
-method definitions.
+method definitions. The only caveat is that `main` must be restarted after
+any changes to your data types, but those should be changing must less frequently
+than the code that uses them.
