@@ -370,7 +370,7 @@ struct Application(Library);
 impl Application {
     fn get_message(&self) -> &'static str {
         unsafe {
-            let f = self.0.get::<unsafe extern fn() -> &'static str>(
+            let f = self.0.get::<fn() -> &'static str>(
                 b"get_message\0"
             ).unwrap();
             f()
