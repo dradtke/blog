@@ -24,6 +24,10 @@ have a working Rust development environment. If not,
 [this](https://doc.rust-lang.org/book/getting-started.html) is a good place to
 get started.
 
+**UPDATE:** The end of this post now contains an updated final version using the
+`libloading` crate instead of `dylib`, since apparently it's more actively maintained.
+The rest of the post is left unchanged.
+
 # Setting Up
 
 In order for this to work, we first need to create a project defined by two halves:
@@ -347,3 +351,65 @@ you're free to use any custom type defined within the `app` crate in your
 method definitions. The only caveat is that `main` must be restarted after
 any changes to your data types, but those should be changing must less frequently
 than the code that uses them.
+
+# Update: Using `libloading`
+
+Since writing this post, it has been brought to my attention that the `dylib`
+crate is not actively maintained, and that `libloading` is a better alternative.
+Here's one way to achieve the same effect using `libloading`:
+
+{{<highlight rust>}}
+extern crate app;
+extern crate libloading;
+
+use libloading::{Library, Symbol};
+
+const LIB_PATH: &'static str = "../app/target/debug/libapp.so";
+
+struct Application(Library);
+impl Application {
+    fn get_message(&self) -> &'static str {
+        unsafe {
+            let f = self.0.get::<unsafe extern fn() -> &'static str>(
+                b"get_message\0"
+            ).unwrap();
+            f()
+        }
+    }
+}
+
+fn main() {
+    let mut app = Application(Library::new(LIB_PATH)
+        .unwrap_or_else(|error| panic!("{}", error)));
+
+    let mut last_modified = std::fs::metadata(LIB_PATH).unwrap()
+        .modified().unwrap();
+
+    let dur = std::time::Duration::from_secs(1);
+    loop {
+        std::thread::sleep(dur);
+        if let Ok(Ok(modified)) = std::fs::metadata(LIB_PATH)
+                                  .map(|m| m.modified())
+        {
+            if modified > last_modified {
+                drop(app);
+                app = Application(Library::new(LIB_PATH)
+                    .unwrap_or_else(|error| panic!("{}", error)));
+                last_modified = modified;
+            }
+        }
+        println!("message: {}", app.get_message());
+    }
+}
+{{</highlight>}}
+
+The primary difference here is the introduction of the `Application` type, which
+is just a wrapper around the dynamic library. The reason for this is that `libloading`,
+being a safer alternative to `dylib`, pretty strictly enforces how long a symbol
+reference can be valid for; if you fetch and maintain a reference the same
+way we did with `dylib`, the compiler will bark at you when you try to do anything
+else with the library, since it's borrowed until the reference goes out of scope.
+The `Application` type wraps the library and looks up symbol references on the fly,
+which gets around the problem with the possibility of a slight performance hit.
+If the performance hit becomes unacceptable, it is possible to maintain a symbol
+reference by using `into_raw()`, but that's left as an exercise for the reader.
