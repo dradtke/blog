@@ -362,7 +362,7 @@ Here's one way to achieve the same effect using `libloading`:
 extern crate app;
 extern crate libloading;
 
-use libloading::{Library, Symbol};
+use libloading::Library;
 
 const LIB_PATH: &'static str = "../app/target/debug/libapp.so";
 
