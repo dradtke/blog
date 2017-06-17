@@ -10,6 +10,8 @@ ISO](https://www.vultr.com/features/uploadiso/) feature and decided to try to
 bring openSUSE to Vultr! Vultr provides guides for installing CoreOS and
 Gentoo, after all, so why not openSUSE?
 
+<!--more-->
+
 # Step One: Create a Vultr Account
 
 This is pretty easy and self-explanatory, but in order to try this out, you'll
