@@ -1,6 +1,7 @@
 +++
 date = "2017-04-28T10:33:15-05:00"
 title = "Isomorphic Golang"
+draft = true
 +++
 
 One of the big reasons for Node.js' popularity, and arguably its single biggest
@@ -11,7 +12,7 @@ using the same technology for client and server programming carries a number of
 benefits, including less cognitive overhead as a result of context switching,
 and more straightforward data serialization.
 
-However, JavaScript is still JavaScript, but there are more ${LANGUAGE} to
+However, JavaScript is still JavaScript, but there are more `${LANGUAGE}` to
 JavaScript transpilers today than ever before, meaning that other languages are
 now able to begin taking advantage of these benefits as well.
 
@@ -26,14 +27,14 @@ bottom of the page)
 
 For demonstrative purposes, the project structure will remain quite simple:
 
-{{<highlight text>}}
+```
 .
 ├── main.go
 ├── static
 │   ├── ...
 └── views
     └── ...
-{{</highlight>}}
+```
 
 At a high level, `main.go` is our server code, `static` contains public assets,
 and `views` contains other frontend code.
@@ -42,7 +43,7 @@ Let's start with a super-simple Go server. This server only does two things:
 renders `views/index.html` at the top level, and serves files under `static/`
 using a prefix:
 
-{{<highlight go>}}
+```go
 package main
 
 import (
@@ -77,15 +78,15 @@ func index(w http.ResponseWriter, r *http.Request) {
         fmt.Println(err)
     }
 }
-{{</highlight>}}
+```
 
 And some very simple markup:
 
-{{<highlight html>}}
+```html
 <html>
   Hello, Go!
 </html>
-{{</highlight>}}
+```
 
 Run this program and you should be able to see this at [http://localhost:8080/](http://localhost:8080/):
 
@@ -96,7 +97,7 @@ Run this program and you should be able to see this at [http://localhost:8080/](
 Let's toss some JavaScript into the mix. Here's a very simple example of a
 GopherJS script, saved as `views/index.go`:
 
-{{<highlight go>}}
+```go
 // +build js
 
 package main
@@ -108,25 +109,26 @@ import (
 func main() {
         js.Global.Call("alert", "Hello GopherJS!")
 }
-{{</highlight>}}
+```
 
 Assuming GopherJS is installed, you can build this with `gopherjs build
 --output=static/index.js views/index.go`, then reference the result in
 `views/index.html`:
 
-{{<highlight html>}}
+```html
 <html>
   Hello, Go!
   <script src="/static/index.js"></script>
 </html>
-{{</highlight>}}
+```
 
 Now reload the page and you should see an alert:
 
 {{< figure src="/images/isomorphic-golang/alert.png" class="regular" >}}
 
-That's a good start, but there are two big pieces remaining: client-side
-templates and a virtual DOM.
+Great, now we're able to write Go code and execute it as client-side JavaScript.
+In order to display something more meaningful than an alert, we'll need to
+introduce some templating.
 
 # Client-Side Templates
 
@@ -144,7 +146,7 @@ grows in complexity.
 We can verify that client-side templates do indeed work by modifying our
 "JavaScript" (note the additional dependency on our DOM library):
 
-{{<highlight go>}}
+```go
 // +build js
 
 package main
@@ -168,7 +170,7 @@ func main() {
     dom.GetWindow().Document().GetElementsByTagName("html")[0].
         SetInnerHTML(buf.String())
 }
-{{</highlight>}}
+```
 
 With this change, the page should display "Hello, Go!" briefly before switching
 to "Hello, html/template!". The reason for the delay is that the HTML page loads
@@ -193,7 +195,7 @@ for this post I'm going to stick with option 1.
 Regardless of the approach taken, the first step is to parse the client
 templates to make them available for use:
 
-{{<highlight go>}}
+```go
 package main
 
 import (
@@ -259,7 +261,7 @@ func index(w http.ResponseWriter, r *http.Request) {
         fmt.Println(err)
     }
 }
-{{</highlight>}}
+```
 
 Client templates are first rendered as normal templates, which allows some
 flexibility in their definition and adds the ability to embed server-side values
@@ -269,7 +271,7 @@ be written out as part of the HTML, and then parsed client-side.
 To enable them to be written out as part of the HTML, we'll define a new
 template function:
 
-{{<highlight go>}}
+```go
 funcs := template.FuncMap{
     "embedtemplate": func(name, id string) (template.HTML, error) {
         s, ok := clientTemplates[name]
@@ -286,35 +288,35 @@ funcs := template.FuncMap{
         ), nil
     },
 }
-{{</highlight>}}
+```
 
 The `serverTemplates` definition line then needs to be modified slighlty to make
 use of the functions:
 
-{{<highlight go>}}
+```go
 serverTemplates = template.Must(
     template.New("").Funcs(funcs).ParseFiles("views/index.html"),
 )
-{{</highlight>}}
+```
 
 Now we can use our `embedtemplate` function to embed the template into our
 markup:
 
-{{<highlight html>}}
+```html
 <html>
   {{embedtemplate "counter.tmpl" "counterTemplate"}}
   <script src="/static/index.js"></script>
 </html>
-{{</highlight>}}
+```
 
 This creates a tag with id `counterTemplate` whose contents we can read to get
 the template, so the previous example with the hard-coded template can be
 updated to something like this:
 
-{{<highlight go>}}
+```go
 tmpl := dom.GetWindow().Document().GetElementByID("counterTemplate")
 t := template.Must(template.New("").Parse(tmpl.InnerHTML()))
-{{</highlight>}}
+```
 
 BAM! Client-side `html/template` templates.
 
@@ -325,17 +327,17 @@ react to changes in state. I like to start by defining a `State` struct in each
 script to define the state for that page; in the case of a counter, it's pretty
 simple:
 
-{{<highlight go>}}
+```go
 type State struct {
     Count int
 }
-{{</highlight>}}
+```
 
 An instance of this struct can be passed in to the template's execution to
 control the display. For example, here's really all we need for the client
 template:
 
-{{<highlight html>}}
+```html
 <button type="button" name="decrement" onclick="UpdateCount(-1)">
   -1
 </button>
@@ -345,13 +347,13 @@ template:
 <button type="button" name="increment" onclick="UpdateCount(1)">
   +1
 </button>
-{{</highlight>}}
+```
 
 Now we need to update our script to be able to repeatedly render this. I like
 creating a wrapper function of sorts that takes a template and a target element
 id, and returns a simple function that performs that render when called:
 
-{{<highlight go>}}
+```go
 // +build js
 
 package main
@@ -426,7 +428,7 @@ func renderFunc(t *template.Template, id string) func() {
 func main() {
     go run()
 }
-{{</highlight>}}
+```
 
 Note that this requires an empty div with id `counter` to be added to the HTML
 page, which serves as the anchor where the counter gets rendered.
@@ -443,7 +445,7 @@ calculate the difference between the virtual DOM and the actual one and only
 make the necessary updates. Integrating the virtual DOM simply requires an
 update to `renderFunc()`:
 
-{{<highlight go>}}
+```go
 // renderFunc generates a rendering function which, when called,
 // renders t into the element with the given id. It also does an
 // initial render, which means the returned function only needs
@@ -503,20 +505,15 @@ func renderFunc(t *template.Template, id string) func() {
         tree = newTree
     }
 }
-{{</highlight>}}
+```
 
 {{< figure src="/images/isomorphic-golang/counter.png" class="regular" >}}
 
 Clicking on the -1 and +1 buttons will now do what you expect by updating the
 number between them.
 
-# Server-Side Rendering?!
+# One Level Deeper: Server-Side Rendering
 
-There is one other trick that you can do to speed things up on the client side,
-which is to actually parse the client-side templates on the server, and then
-rather than embed the template text in a `<script>` tag, serialize the
-template's parse tree using `encoding/gob` and then construct the template on
-the client side with `AddParseTree()`.
 
 Full source code (including server-side rendering) can be found
 [here](https://github.com/dradtke/isomorphic-golang).
