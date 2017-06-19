@@ -1,28 +1,27 @@
 +++
 date = "2016-07-26T23:29:01-05:00"
-title = "Go Monitoring Tricks"
+title = "Go Expvar Tricks"
 draft = true
 +++
 
-Want to know more about what's going on inside your Go application?
-Here are a couple tricks to make it easier to gain some visibility.
+# Introduction
 
-(Note that while these examples utilize HTTP endpoints to expose data,
-these tricks can be used by any type of application, not just web apps)
-
-<!--more-->
-
-# Intro to Expvar
-
-Go's `expvar` package is the means by which we will communicate information to
-the outside world. Nobody sums the package up better than its own description,
-so I'll defer:
+The utility of Go's `expvar` package is not really given justice by the
+package's concise description:
 
 {{<highlight text>}}
 Package expvar provides a standardized interface to public
 variables, such as operation counters in servers. It exposes
 these variables via HTTP at /debug/vars in JSON format.
 {{</highlight>}}
+
+What does that mean exactly, and why is it useful? A hint is given with
+the phrase "operation counters in servers", but in this post I will touch
+on some more concrete examples for making `expvar` work for you.
+
+<!--more-->
+
+# Hello Expvar
 
 Unfortunately, the rest of the package's documentation is short on examples,
 but fortunately it's not difficult to get up and running:
@@ -31,12 +30,12 @@ but fortunately it's not difficult to get up and running:
 package main
 
 import (
-	_ "expvar"
-	"net/http"
+    _ "expvar"
+    "net/http"
 )
 
 func main() {
-	http.ListenAndServe(":8080", nil)
+    http.ListenAndServe(":8080", nil)
 }
 {{</highlight>}}
 
@@ -66,7 +65,7 @@ by `expvar`.
 
 Got all that? Let's go further.
 
-# Supporting More Routers
+## Supporting More Routers
 
 `http.DefaultServeMux` is great and all, but I'm personally a big fan
 of Gorilla's `mux` package, and given the array of router options available
@@ -89,7 +88,6 @@ import (
 func main() {
     router := mux.NewRouter()
     router.Path("/debug/vars").Handler(http.DefaultServeMux)
-
     http.ListenAndServe(":8080", router)
 }
 {{</highlight>}}
@@ -117,12 +115,12 @@ import (
     "github.com/gorilla/mux"
 )
 
-func main() {
-    router := mux.NewRouter()
-    router.Path("/debug/vars").Handler(http.DefaultServeMux)
 
+func main() {
     expvar.NewString("revision").Set("abcd")
 
+    router := mux.NewRouter()
+    router.Path("/debug/vars").Handler(http.DefaultServeMux)
     http.ListenAndServe(":8080", router)
 }
 {{</highlight>}}
@@ -155,11 +153,10 @@ import (
 var REVISION string
 
 func main() {
-    router := mux.NewRouter()
-    router.Path("/debug/vars").Handler(http.DefaultServeMux)
-
     expvar.NewString("revision").Set(REVISION)
 
+    router := mux.NewRouter()
+    router.Path("/debug/vars").Handler(http.DefaultServeMux)
     http.ListenAndServe(":8080", router)
 }
 {{</highlight>}}
@@ -175,10 +172,162 @@ $ go run -ldflags "-X main.REVISION=wxyz" main.go
 When run this way, revision should be reported as `"wxyz"`. It's left as an
 exercise to the reader to determine how to inject a more meaningful value
 here based on your version control system (hint for git users: `git rev-parse HEAD`).
+By using a build system like `make` to start your program, you can automate
+this so that your program always reports the correct revision.
 
-This type of `expvar` use is quite helpful, but it's also a good fit for more
-dynamic information.
+This type of `expvar` use is quite helpful, but let's see how to get it to
+report on some more dynamic information.
 
 # Reporting Metrics
 
-TODO: write
+Another very useful data point that can be exposed is the number of requests
+that your site serves over time. In order to get this information, we need to build in
+some middleware whose job is to keep track of it for us, so that we know that every
+request is accounted for without having to duplicate the code for each handler.
+Some frameworks come with their own methods for defining custom middleware, but for these
+examples, I'm going to use `alice`, which is a 3rd-party package that makes it easy to
+define a middleware chain.
+
+Without using `expvar`, here's a naïve initial implementation that keeps track of
+the number of hits to each available endpoint (Note that an index handler has been
+added so that the example can be tested without hitting a 404):
+
+{{<highlight go>}}
+package main
+
+import (
+    "fmt"
+    "net/http"
+
+    "github.com/gorilla/mux"
+    "github.com/justinas/alice"
+)
+
+var hits = make(map[string]int)
+
+// hitCounter is a middleware handler that increments the hit counter
+// for the request's method and URL.
+func hitCounter(next http.Handler) http.Handler {
+    return http.HandlerFunc(
+        func(w http.ResponseWriter, r *http.Request) {
+            key := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+            hits[key]++
+
+            next.ServeHTTP(w, r)
+        },
+    )
+}
+
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+    w.Write([]byte("This is the front page."))
+}
+
+func main() {
+    router := mux.NewRouter()
+    router.Path("/").HandlerFunc(indexHandler)
+    http.ListenAndServe(":8080", alice.New(
+        hitCounter,
+    ).Then(router))
+}
+{{</highlight>}}
+
+Spot the bug? This code has a glaring race condition in that `hits` is not
+protected by any synchronization. Remember that Go spawns a new goroutine
+for each incoming request, and if two requests come in at the same time,
+modifying a global value like this without a mutex can lead to unexpected
+results.
+
+Let's kill two birds with one stone by utilizing an `expvar.Map`. Not only
+does this expose the value for us through `/debug/vars`, but it's also
+thread-safe because it does its own internal synchroniziation:
+
+{{<highlight go>}}
+package main
+
+import (
+    "expvar"
+    "fmt"
+    "net/http"
+
+    "github.com/gorilla/mux"
+    "github.com/justinas/alice"
+)
+
+var hits = expvar.NewMap("hits")
+
+// hitCounter is a middleware handler that increments the hit counter
+// for the request's method and URL.
+func hitCounter(next http.Handler) http.Handler {
+    return http.HandlerFunc(
+        func(w http.ResponseWriter, r *http.Request) {
+            key := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+            hits.Add(key, 1)
+
+            next.ServeHTTP(w, r)
+        },
+    )
+}
+
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+    w.Write([]byte("This is the front page."))
+}
+
+func main() {
+    router := mux.NewRouter()
+    router.Path("/").HandlerFunc(indexHandler)
+    router.Path("/debug/vars").Handler(http.DefaultServeMux)
+    http.ListenAndServe(":8080", alice.New(
+        hitCounter,
+    ).Then(router))
+}
+{{</highlight>}}
+
+That is actually all there is to it. It can even be adjusted to give a rate
+value, e.g. "hits per minute", by decrementing the value after the preferred
+amount of time has passed:
+
+{{<highlight go>}}
+package main
+
+import (
+    "expvar"
+    "fmt"
+    "net/http"
+    "time"
+
+    "github.com/gorilla/mux"
+    "github.com/justinas/alice"
+)
+
+var rates = expvar.NewMap("rates")
+
+// hitCounter is a middleware handler that increments the hit counter
+// for the request's method and URL.
+func hitCounter(next http.Handler) http.Handler {
+    return http.HandlerFunc(
+        func(w http.ResponseWriter, r *http.Request) {
+            key := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+            rates.Add(key, 1)
+            go func() {
+                time.Sleep(1 * time.Minute)
+                rates.Add(key, -1)
+            }()
+
+            next.ServeHTTP(w, r)
+        },
+    )
+}
+
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+    w.Write([]byte("This is the front page."))
+}
+
+func main() {
+    router := mux.NewRouter()
+    router.Path("/").HandlerFunc(indexHandler)
+    router.Path("/debug/vars").Handler(http.DefaultServeMux)
+    http.ListenAndServe(":8080", alice.New(
+        hitCounter,
+    ).Then(router))
+}
+{{</highlight>}}
