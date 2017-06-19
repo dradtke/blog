@@ -3,4 +3,5 @@ languageCode = "en-us"
 title = "Version 7.0"
 
 theme = "base16"
-pygmentsuseclasses = true
+PygmentsUseClasses = true
+PygmentsCodeFences = true
