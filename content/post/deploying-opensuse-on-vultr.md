@@ -67,6 +67,12 @@ but it seems like something that would).  If you're using an ISO from the front
 page of https://software.opensuse.org, however, there is no live session to boot
 into, so we'll go with the second option.
 
+UPDATE: Since writing this post, a commenter on Reddit pointed out that you can
+use a public pasting service such as Pastebin to host the control file, which is
+quite a bit easier than the following advice that I originally recommended. If
+you follow that approach, make sure you use the _raw_ URL, and feel free to skip
+the next section and go straight to step four!
+
 ### Create an Intermediate Server
 
 In order to serve the control file from another location, we'll first have to
