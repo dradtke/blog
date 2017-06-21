@@ -53,6 +53,10 @@ Important note: Vultr mounts the instance's hard disk at `/dev/vda`, _not_
 `/dev/sda` like you would normally see. Make sure that the installation target
 is set correctly or the installation will fail.
 
+If you don't want to make any customizations to the control file, feel free to
+grab the link for the example and use that as the `autoyast` value in step four.
+If you do want to make any changes, though, read on.
+
 ## Make the Control File Available
 
 Once you have a control file, you'll have to make it available to the
