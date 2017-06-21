@@ -20,6 +20,12 @@ to the account for billing.  Once you've completed that, move on to step two.
 
 # Step Two: Upload desired ISO
 
+UPDATE: I submitted a request to Vultr to include Leap in their ISO library, and
+they accepted it! You should now see it available in the ISO Library section,
+meaning you don't have to upload it manually! You are of course free to still do
+so if you like, but if the version in the Library matches your needs, then
+continue on to step three.
+
 The first thing you'll need to do with your account is to upload the openSUSE
 ISO to it. Go to `Servers -> ISO` and click the "Add ISO" button. On the next
 page you'll need to provide a URL from where the file can be downloaded. For
@@ -52,10 +58,6 @@ designed for use with Vagrant):
 Important note: Vultr mounts the instance's hard disk at `/dev/vda`, _not_
 `/dev/sda` like you would normally see. Make sure that the installation target
 is set correctly or the installation will fail.
-
-If you don't want to make any customizations to the control file, feel free to
-grab the link for the example and use that as the `autoyast` value in step four.
-If you do want to make any changes, though, read on.
 
 ## Make the Control File Available
 
