@@ -2,6 +2,6 @@ baseurl = "https://damienradtke.com/"
 languageCode = "en-us"
 title = "Version 7.0"
 
-theme = "base16"
+theme = "hyde"
 PygmentsUseClasses = true
 PygmentsCodeFences = true
