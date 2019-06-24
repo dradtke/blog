@@ -5,3 +5,6 @@ title = "Version 7.0"
 theme = "hyde"
 PygmentsUseClasses = true
 PygmentsCodeFences = true
+
+[params]
+description = "Occasional posts about programming."
