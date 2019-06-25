@@ -1,6 +1,7 @@
 +++
 date = "2019-06-24"
 title = "Overengineering This Blog"
+enableInlineShortcodes = true
 draft = true
 +++
 
@@ -13,6 +14,9 @@ Linode, so while it is still on just a single
 node as of this writing, I can now needlessly scale this site to my heart's
 content should I ever feel the urge to do so.
 
+To prove it, here is the Nomad allocation ID assigned to this process:
+<strong>{{< alloc_id >}}</strong>
+
 Here are the components involved:
 
 1. [Consul](https://www.consul.io/) - for clustering
@@ -21,7 +25,6 @@ Here are the components involved:
 4. [Linode NodeBalancers](https://www.linode.com/nodebalancers/) - for load
    balancing
 5. [Let's Encrypt](https://letsencrypt.org/) - for SSL certification
-6. [Minio](https://min.io/) - for artifact hosting
 6. ...plus a couple small programs to tie it all together
 
 Assuming you've made it this far, you're probably at least a little bit curious
@@ -37,7 +40,10 @@ have:
 
 - `server-us-central-1` - for running Consul and Nomad in server mode
 - `client-us-central-1` - for running Consul and Nomad in client mode
-- `support` - for artifact hosting, cert signing, and other misc. tasks
+
+I also have an additional `support` node for [artifact hosting](https://min.io/)
+and [certificate signing](https://github.com/cloudflare/cfssl), but we won't
+need those for the scope of thie post.
 
 ### Install Consul
 
