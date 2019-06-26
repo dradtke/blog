@@ -63,16 +63,17 @@ Consul and Nomad installed on them. We have a couple different options here:
 The first option is the most complex, and I only recommend it if you want a
 challenge or are already familiar with building these projects yourself.
 
-Between the two saner options, I chose to go with installing directly from
+Between the two simpler options, I chose to go with installing directly from
 Hashicorp, because there's no lag when a new version is released, and each one
 comes built with the web UI, which is pretty handy to have once things are up
 and running.
 
-The downside to installing directly from Hashicorp is that you have to make sure
-you follow their [security best practices](https://www.hashicorp.com/security),
-which involves verifying the download using a checksum and ensuring that the
-checksum was signed by Hashicorp. Fortunately, I've already written a Bash
-script that handles this for you:
+The downside to installing directly from Hashicorp is that it takes a little
+work to follow their [security best
+practices](https://www.hashicorp.com/security), which involves verifying the
+download using a checksum and ensuring that the checksum was signed by
+Hashicorp. Fortunately, I've already written a Bash script that handles this for
+you:
 
 {{< gist dradtke e5da8eb5295519abe712b4ee8d1f6d9a >}}
 
@@ -199,7 +200,10 @@ retry_join = ["..."]
 {{< /highlight >}}
 
 For `retry_join`, put the private IP address belonging to `server-us-central-1`,
-since this is how the client knows how to connect to the cluster.
+since this is how the client knows how to connect to the cluster. Note that we
+are not using the public IP; in fact, the only IP address we truly care about
+for this post is the private IP of each node. The only public IP we want to use
+is the NodeBalancer's.
 
 Once that's in place, start the service here as well, and hopefully you will now
 see something like this:
@@ -211,9 +215,9 @@ server-us-central-1  192.168.174.116:8301  alive   server  1.5.1  2         us-c
 client-us-central-1  192.168.167.74:8301   alive   client  1.5.1  2         us-central  <default>
 {{< /highlight >}}
 
-To see the web UI, SSH back onto `server-us-central-1` with port forwarding
-(`ssh -L 8500:localhost:8500 ...`), and then you should be able to see it at
-http://localhost:8500/ui/
+If you'd like to see the web UI, SSH back onto `server-us-central-1` with port
+forwarding (`ssh -L 8500:localhost:8500 ...`), and then you should be able to
+see it at http://localhost:8500/ui/
 
 ![Consul UI](/images/overengineering-this-blog/consul-ui.png)
 
@@ -329,18 +333,6 @@ job "damienradtkecom" {
                 ]
             }
 
-            service {
-                name = "${JOB}-${TASK}"
-                port = "http"
-            }
-
-
-            resources {
-                network {
-                    port "http" {}
-                }
-            }
-
             artifact {
                 source = "github.com/dradtke/blog"
                 destination = "local/blog/"
@@ -354,6 +346,17 @@ job "damienradtkecom" {
                 options {
                     checksum = "sha256:39d3119cdb9ba5d6f1f1b43693e707937ce851791a2ea8d28003f49927c428f4"
                 }
+            }
+
+            resources {
+                network {
+                    port "http" {}
+                }
+            }
+
+            service {
+                name = "${JOB}-${TASK}"
+                port = "http"
             }
         }
     }
@@ -455,6 +458,124 @@ port 24868?
 ## Enter the NodeBalancer
 
 There are many solutions out there for load balancing, but for the sake of
-simplicity, I decided to go with Linode's offering. It has some downsides,
-notably that all balanced servers have to be in the same datacenter, but it's
-still a good option, especially if you're already running on Linode.
+simplicity, I decided to go with Linode's offering. Creating one is fairly
+straightforward through their web interface:
+
+![Creating a NodeBalancer](/images/overengineering-this-blog/create-nodebalancer.png)
+
+The important parts to note are:
+
+1. The configuration listens to HTTP on port 80, so that we can visit the
+   website without having to specify a port. 
+2. The backend node's IP address is the private IP of `client-server-us-central-1`.
+3. The backend node's port is the one that we know Hugo is listening on.
+
+If you create this and wait a little bit, you should now be able to see the
+website by visiting the IP address of the NodeBalancer.
+
+Alright, we now have a working load-balanced blog, but there's a problem: since
+we're using dynamic port allocation, any time we restart the server task, the
+site will break because it will get assigned a new port that the NodeBalancer
+doesn't know about. To fix this, we need to alert Linode whenever our task's
+port changes.
+
+## Listening for Changes
+
+Besides clustering, the other big benefit we get from Consul is the ability to
+set up a [watch](https://www.consul.io/docs/agent/watches.html#service) that
+will let us react to changes in a running service. When a change in the running
+service is detected, the watch will execute a script of our choosing, passing it
+a JSON payload describing the service in its current state. An example of the
+payload can be seen on the documentation page.
+
+Because we want to update the NodeBalancer on each service change, we will need
+to write a script that uses Linode's API to make those changes. I chose to write
+my script in Ruby, but any scripting language with reasonable JSON and HTTP
+support would work.
+
+In order to interact with Linode's API, you will need an [Access
+Token](https://www.linode.com/docs/platform/api/getting-started-with-the-linode-api/#get-an-access-token),
+and specifically one with Read/Write access to NodeBalancers. Once you
+have one, save this script as `/usr/local/bin/balance.rb`, replacing the value
+of `API_KEY` with your newly-created Access Token:
+
+{{< gist dradtke 5562e1cab015c9dc3aff7ab4f9fba8c9 >}}
+
+Note also that this script uses the `httparty` gem, so you may need to run `gem
+install httparty` before executing this script in order for it to work.
+
+The script takes two arguments: the name of the balancer, and the port
+specifying which config to update. It works by locating the NodeBalancer config
+to be updated, querying its configured backend nodes, and then making the
+necessary deletions + additions so that it matches the watch payload, which is
+provided through standard input.
+
+(Note that we need to provide a label for new backend nodes, but we don't really
+care what it is, so we just shell out to `uuidgen` and strip its dashes in order
+to fit within the character limit.)
+
+With this in place, we just need to add a new Consul configuration file
+`/etc/consul.d/watches.hcl` with the following contents:
+
+{{< highlight hcl >}}
+watches {
+    type = "service"
+    service = "damienradtkecom-server"
+    handler_type = "script"
+    args = ["/usr/local/bin/balance.rb", "damienradtkecom", "80"]
+    passingonly = true
+}
+{{< /highlight >}}
+
+This tells Consul to set up a `service` watch that will invoke our `balance.rb`
+script with the specified arguments whenever a change to the
+`damienradtkecom-server` task is detected. Make sure to restart Consul so that
+it picks up the change!
+
+To test it, run `nomad job stop damienradtke`, and after a few moments ensure
+that there are no backend nodes configured on the NodeBalancer. Re-start the job
+with `nomad job run damienradtkecom.nomad`, and after a few moments it should
+once again have a backend node whose IP address matches the client's private IP,
+and whose port you can verify in the allocation's log output.
+
+At this point, we have completed the bare minimum to successfully scale this
+blog out to an arbitrary number of nodes, but there's a big piece missing still:
+SSL.
+
+#### An Aside on IP Addresses
+
+Note that we define `want` in the script by grabbing the IP address from the
+node, rather than the value advertised by the service. Why? Well, in theory,
+you can tell Nomad which IP address services should advertise by setting the
+[network_interface](https://www.nomadproject.io/docs/configuration/client.html#network_interface)
+value. If you run `ip addr`, you will see the available interfaces:
+
+{{< highlight text >}}
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether f2:3c:91:ad:be:1d brd ff:ff:ff:ff:ff:ff
+    inet 66.228.52.180/24 brd 66.228.52.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet 192.168.174.116/17 brd 192.168.255.255 scope global eth0:1
+       valid_lft forever preferred_lft forever
+[...]
+{{< /highlight >}}
+
+The first interface, `lo`, is the loopback interface, which is used for
+connections to `localhost` and only works from the node to itself. Linodes are
+configured with only one other interface, `eth0`, which defines both the public
+(`66.228.52.180`) and private (`192.168.174.116`) IP addresses. Most of
+Nomad's networking settings will default to the first private IP address, but
+services will advertise themselves using the first _public_ IP address. Since we
+only want to access these services via the NodeBalancer, we actually want them
+to advertise themselves using the private IP as well; however, this is currently
+impossible with Nomad because the private IP shares `eth0`, and it's [currently
+impossible](https://github.com/hashicorp/nomad/issues/3675) to use the more
+specific `eth0:1` alias. Once that issue is fixed, the script can be updated to
+grab both the IP and port from the service definition itself, but until then we
+can use the node's IP, since that one is properly configured as the private IP.
