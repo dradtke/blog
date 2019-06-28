@@ -37,19 +37,20 @@ have:
 
 - `server-us-central-1` - for running Consul and Nomad in server mode
 - `client-us-central-1` - for running Consul and Nomad in client mode
+- `support` - for [artifact hosting](https://min.io/) and [certificate signing](https://github.com/cloudflare/cfssl)
 
 For information on the differences between server and client mode, check out the
 associated docs for [Consul](https://www.consul.io/docs/agent/basics.html) and
-[Nomad](https://www.nomadproject.io/intro/getting-started/running.html).
+[Nomad](https://www.nomadproject.io/intro/getting-started/running.html). I also
+won't go into much detail on the setup of `support`, since all we need from it
+for this post is the artifact hosting; setting up your own S3 bucket or Minio
+server is left as an exercise for the reader.
 
-(I also have an additional `support` node for [artifact hosting](https://min.io/)
-and [certificate signing](https://github.com/cloudflare/cfssl), but we won't
-need those for the scope of this post.)
-
-The rest of this post assumes that you've chosen a distribution with systemd,
-since that will be used to run Consul and Nomad as services. I personally am
-running openSUSE, which incidentally is one of the reasons that I chose Linode,
-since unfortunately not many other VPS providers make it an option.
+The rest of this post assumes that you've chosen a distribution with systemd for
+the client and server nodes, since that will be used to run Consul and Nomad as
+services. I personally am running openSUSE, which incidentally is one of the
+reasons that I chose Linode, since unfortunately not many other VPS providers
+make it an option.
 
 ### Installing Hashicorp Tools
 
@@ -307,61 +308,7 @@ stored at https://github.com/dradtke/blog, so I decided to create a job that
 takes advantage of Hugo's built-in web server and pulls blog content directly
 from Github:
 
-{{< highlight hcl >}}
-job "damienradtkecom" {
-    region = "us"
-
-    datacenters = ["us-central"]
-    type = "service"
-
-    group "server" {
-        count = 1
-
-        task "server" {
-            driver = "exec"
-            config {
-                command = "hugo"
-                args = [
-                    "server",
-                    "--config=local/blog/config.toml",
-                    "--watch=false",
-                    "--bind=0.0.0.0",
-                    "--port=${NOMAD_PORT_http}",
-                    "--contentDir=local/blog/content",
-                    "--layoutDir=local/blog/layouts",
-                    "--themesDir=local/blog/themes",
-                ]
-            }
-
-            artifact {
-                source = "github.com/dradtke/blog"
-                destination = "local/blog/"
-                options {
-                    ref = "d60dd4a75d7d4015e6d0109e15e3fb46d31cd6bc"
-                }
-            }
-
-            artifact {
-                source = "https://github.com/gohugoio/hugo/releases/download/v0.55.6/hugo_0.55.6_Linux-64bit.tar.gz"
-                options {
-                    checksum = "sha256:39d3119cdb9ba5d6f1f1b43693e707937ce851791a2ea8d28003f49927c428f4"
-                }
-            }
-
-            resources {
-                network {
-                    port "http" {}
-                }
-            }
-
-            service {
-                name = "${JOB}-${TASK}"
-                port = "http"
-            }
-        }
-    }
-}
-{{< /highlight >}}
+{{< gist dradtke 7a3d6477666c05e4558b990630c5a5ca >}}
 
 This job makes heavy use of [Nomad
 artifacts](https://www.nomadproject.io/docs/job-specification/artifact.html),
@@ -503,6 +450,8 @@ of `API_KEY` with your newly-created Access Token:
 
 Note also that this script uses the `httparty` gem, so you may need to run `gem
 install httparty` before executing this script in order for it to work.
+This script would be better if it used a proper Linode API gem, but none of the
+ones I found were well-documented or seemed to work with the new v4 API.
 
 The script takes two arguments: the name of the balancer, and the port
 specifying which config to update. It works by locating the NodeBalancer config
@@ -579,3 +528,46 @@ impossible](https://github.com/hashicorp/nomad/issues/3675) to use the more
 specific `eth0:1` alias. Once that issue is fixed, the script can be updated to
 grab both the IP and port from the service definition itself, but until then we
 can use the node's IP, since that one is properly configured as the private IP.
+
+## Setting up SSL
+
+At this point, we have a website successfully being served by a load balancer
+over HTTP. However, we want our website to be secure, so we want to set up SSL
+and naturally that means using [Let's Encrypt](https://letsencrypt.org/). One
+cool feature of Linode's NodeBalancers is that you can [configure
+them](https://www.linode.com/docs/platform/nodebalancer/nodebalancer-ssl-configuration/)
+to terminate SSL, which means we only need to install the certificate in one
+location no matter how many instances of the site we're running.
+
+There are several different ways to go about integrating Let's Encrypt based on
+the different [challenges](https://letsencrypt.org/docs/challenge-types/)
+available. For this post, we'll stick with the standard HTTP-01 challenge, though
+it's certainly possible to use DNS-01 if your domain is managed through Linode
+or some other domain manager with an API.
+
+The HTTP-01 challenge works by creating a special file that Let's Encrypt will
+then query for over HTTP. This means that a certificate renewal process will
+need to include a webserver, which we will configure to be the new listener for
+port 80, as well as a process for initiating the renewal periodically.
+
+With these in mind, I decided to write it as a Go program using `acme/autocert`,
+which makes it super simple to both listen for challenges, and to initiate the
+renewal:
+
+{{< gist dradtke 35f115f88ba25db697ca9dea858f1504 >}}
+
+Note that here you also need to update it to include your own Access Token, one
+with Read/Write access to NodeBalancers.
+
+Now we will need to take advantage of `support`, or an S3 bucket if you don't
+want to set up Minio. The above program should be compiled into a 64-bit Linux
+binary and hosted, and then we can add a task for it to `damienradtkecom.nomad`:
+
+{{< gist dradtke f44ef9f49eede472c463b50bbbb7aae7 >}}
+
+We create a separate task group here because we will only ever want 1 of these
+running, even if we scale up the number of servers. The definition of the task
+itself is super straightforward, since all it does is configure a port for HTTP,
+download the binary, and execute it.
+
+TODO: talk about needing to use raw_exec, or add SSL certs to the chroot.
