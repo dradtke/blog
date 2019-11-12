@@ -29,7 +29,7 @@ as a required parameter for defined methods.
 
 Here's how you define a simple Gorilla RPC server:
 
-{{<highlight go>}}
+```go
 package main
 
 import (
@@ -59,7 +59,7 @@ func main() {
                 log.Fatal(err)
         }
 }
-{{</highlight>}}
+```
 
 This registers an RPC endpoint at `http://localhost:8080/rpc` with a JSON codec.
 To access it, you need to send a specially-formatted POST request to it:

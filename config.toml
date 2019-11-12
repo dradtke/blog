@@ -3,11 +3,18 @@ languageCode = "en-us"
 title = "Version 7.0"
 
 theme = "hyde"
-PygmentsUseClasses = true
-PygmentsCodeFences = true
+pygmentsUseClasses = false
+pygmentsCodeFences = true
+pygmentsStyle = "monokai"
+pygmentsOptions = "nowrap=true"
 
 # This is needed for deployment via Nomad, because it can't write to "resources" in the artifact directory.
 resourceDir = "/tmp/resources"
 
 [params]
 description = "Occasional posts about programming."
+
+[[menu.main]]
+identifier = "home"
+name = "About"
+url = "/pages/about"
