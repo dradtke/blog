@@ -6,5 +6,8 @@ theme = "hyde"
 PygmentsUseClasses = true
 PygmentsCodeFences = true
 
+# This is needed for deployment via Nomad, because it can't write to "resources" in the artifact directory.
+resourceDir = "/tmp/resources"
+
 [params]
 description = "Occasional posts about programming."
