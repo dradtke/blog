@@ -18,3 +18,13 @@ description = "Occasional posts about programming."
 identifier = "home"
 name = "About"
 url = "/pages/about"
+
+[[menu.main]]
+identifier = "github"
+name = "Projects — Github"
+url = "https://github.com/dradtke/"
+
+[[menu.main]]
+identifier = "sourcehut"
+name = "Projects — Sourcehut"
+url = "https://git.sr.ht/~damien"
