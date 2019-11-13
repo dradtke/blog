@@ -8,7 +8,7 @@ In an attempt to consolidate my various personal projects, and to be efficient
 about how much money I spend on VPS hosting, this blog is now running on my tiny
 Nomad cluster. The ID for this allocation is:
 
-Allocation ID: <strong>{{< alloc_id >}}</strong>
+<code>{{< alloc_id >}}</code>
 
 The components involved are:
 
