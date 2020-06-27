@@ -32,7 +32,17 @@ My cluster is built on [Linode](https://www.linode.com/) because they offer open
 DNS management. However, this guide should still be relevant as long as your instances run an
 operating system based on `systemd` and have `firewalld` installed.
 
-# Getting Started
+# Table of Contents
+
+The rest of this post is going to be broken down into the following sections:
+
+1. [Getting Started](#getting-started)
+2. [Safety First: Configuring TLS](#safety-first-configuring-tls)
+3. Behind the Firewall
+3. Provisioning with Terraform
+4. Running a Website
+
+## Getting Started
 
 A primary fixture in my setup is the use of a "support" server, which is a single VPS instance that
 acts as the entrypoint for the rest of the cluster. Most of the infrastructure is provisioned with
@@ -40,20 +50,24 @@ Terraform and is designed to be easily replaceable; the support server is the lo
 cared for as a [pet](http://cloudscaling.com/blog/cloud-computing/the-history-of-pets-vs-cattle/)
 rather than cattle.
 
-There are several important benefits of the support server:
+There are several important benefits of using a support server:
 
-1. Cluster members are provisioned with a random root password which is never exposed; access is
-   only granted via SSH public keys, and never to `root`. Having a single access point into the
-   cluster provides an easy way to tighten security. (_Technically_, my setup forwards my SSH agent
-   whenever I `ssh` on to the support server and my keys are configured via Linode's dashboard, but
-   this benefit still stands)
-2. The support server acts as the guardian of the Certificate Authorities, and new certificates are
-   only issued by making a request to the support server.
-3. The support server maintains Terraform state. Setting up a backend is an option here as well, but
-   for relatively simple uses like mine, it's easier to stick with the "local" backend on the
+1. Cluster members are provisioned with a random root password which is never exposed; **access is
+   only granted via SSH public keys**, and never to `root` (after provisioning has finished).
+   Restricting authorized keys to only what is available on the support server is an easy way to
+   tighten your security. (My setup is actually slightly different in that servers only allow access
+   with the public keys defined in Linode and I always forward my SSH agent to the support server,
+   but I still do all cluster operations on the support server.)
+2. The support server acts as the **guardian of the Certificate Authorities**, and new certificates
+   are only issued by making a request to the support server.
+3. The support server **maintains Terraform state**. Setting up a backend is an option here as well,
+   but for relatively simple uses like mine, it's easier to stick with the "local" backend on the
    support server.
+4. **Cheap artifact hosting**. As long as you have a server running with a known address, you can have
+   your support server host all your artifacts and serve them with [minio](https://min.io/) or even
+   a plain HTTP server.
 
-## Safety First: TLS
+## Safety First: Configuring TLS
 
 In order to safely restrict access to cluster resources, the first step you'll want to take with
 your support server is to generate Certificate Authorities that can be used to configure TLS for
@@ -145,25 +159,24 @@ config = /etc/ssl/cfssl.json
 Running `multirootca` under systemd turns the support server into a central authority for issuing
 new certificates, which is required in order to spin up new servers securely.
 
-# Enter Terraform
+Issuing new certificates is done via [this
+script](https://git.sr.ht/~damien/infrastructure/tree/master/scripts/issue-cert.sh), which is run
+from each new node that needs certificates, and uses the CFSSL CLI to make a `gencert` request to
+the running `multirootca` service. Like the support server, certs and keys all live under
+`/etc/ssl`, grouped by application name.
 
-The SSL-specific setup is most of what needs to be done that can't be encoded in Terraform, due to
-its sensitive nature. Almost everything else is Terraformable, which is fantastic for
-reproducibility and state management.
+One thing to note is how Consul, Nomad, and Vault interact with each other, since that affects which
+certificates you need to issue. Vault depends on Consul, and Nomad depends on both Consul and Vault,
+so an instance running a Nomad agent will have a lot of certificates in `/etc/ssl/nomad`:
 
-There are many different ways to structure Terraform code, but I wanted to make sure that the
-cluster components were as decomposed as possible. My cluster consists of the following node types:
-
-1. `consul-server`
-2. `vault-client`
-3. `nomad-server`
-4. `nomad-client`
-
-Each of these has its own module, and for the most part are very similar. Servers are provisioned by
-first running a [stackscript](https://www.linode.com/docs/platform/stackscripts/) on the server, and
-then once that's done, Terraform takes over in order to do a number of custom configurations.
-
-`nomad-client` bears some special mention, since it is likely the first instance type that you will
-want to scale out, and it represents the nodes that will actually be running your applications.
-
-TODO: talk load balancers and domain configuration
+{{<highlight text>}}
+-rw-r--r-- 1 nomad nomad 692 Jun 14 21:59 ca.pem
+-r--r----- 1 nomad nomad 228 Jun 14 22:00 cli-key.pem
+-rw-r--r-- 1 nomad nomad 714 Jun 14 22:00 cli.pem
+-r-------- 1 nomad nomad 228 Jun 14 22:00 consul-key.pem
+-rw-r--r-- 1 nomad nomad 970 Jun 14 22:00 consul.pem
+-r-------- 1 nomad nomad 228 Jun 15 19:07 nomad-key.pem
+-rw-r--r-- 1 nomad nomad 803 Jun 15 19:07 nomad.pem
+-r-------- 1 nomad nomad 228 Jun 14 22:00 vault-key.pem
+-rw-r--r-- 1 nomad nomad 714 Jun 14 22:00 vault.pem
+{{</highlight>}}
