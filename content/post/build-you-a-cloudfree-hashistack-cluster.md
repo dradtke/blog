@@ -4,6 +4,17 @@ title = "Build You a Cloud™-Free Hashistack Cluster"
 draft = true
 +++
 
+## Table of Contents
+
+1. [Preface](#preface)
+2. [Getting Started](#getting-started)
+3. [Safety First: TLS](#safety-first-tls)
+4. [Behind the Firewall](#behind-the-firewall)
+5. Provisioning with Terraform
+6. Running a Website
+
+## Preface
+
 "Hashistack" refers to a network cluster based on [HashiCorp](https://www.hashicorp.com/) tools, and
 after spending some time on it off-and-on, the architecture of my own cluster (on which this blog is
 running, among other personal projects) has finally stabilized. In this post I will walk you through
@@ -15,10 +26,10 @@ repo](https://git.sr.ht/~damien/infrastructure/). For the more patient, read on.
 
 ## The Cloud™
 
-The term "cloud" can be pretty ambiguous, but was popularized with the rise of services providing
-features beyond just a Virtual Private Server, or VPS. In this post, I want to draw a distinction
-between VPS providers and Cloud™ providers. While there are many different VPS providers, here I use
-the term Cloud™ to refer to the big 3: AWS, Azure, and GCP.
+The term "cloud" can be pretty ambiguous, but usually refers to some version of a platform providing
+managed services beyond a simple Virtual Private Server, or VPS. In this post, I want to draw a
+distinction between VPS providers and Cloud™ providers. While there are many different VPS
+providers, here I use the term Cloud™ to refer to the big 3: AWS, Azure, and GCP.
 
 There is nothing inherently wrong with building applications on the Cloud™, but almost by
 definition, there is less to discuss here, especially with the recent launch of [HashiCorp Cloud
@@ -26,31 +37,25 @@ Platform](https://www.hashicorp.com/cloud-platform/). These services let you get
 quickly, but also often come with a hefty price tag. Sticking with VPS providers can save you money
 and, in my opinion, is more fun.
 
-## My Provider
-
 My cluster is built on [Linode](https://www.linode.com/) because they offer openSUSE VPS images and
-DNS management. However, this guide should still be relevant as long as your instances run an
-operating system based on `systemd` and have `firewalld` installed.
+DNS management. However, this guide should still be relevant no matter what distribution you're
+using, though with some extra steps if you do not have
+[`systemd`](https://www.freedesktop.org/wiki/Software/systemd/) or
+[`firewalld`](https://firewalld.org/) available.
 
-# Table of Contents
-
-The rest of this post is going to be broken down into the following sections:
-
-1. [Getting Started](#getting-started)
-2. [Safety First: Configuring TLS](#safety-first-configuring-tls)
-3. Behind the Firewall
-3. Provisioning with Terraform
-4. Running a Website
 
 ## Getting Started
+
+### Create a Support Server
 
 A primary fixture in my setup is the use of a "support" server, which is a single VPS instance that
 acts as the entrypoint for the rest of the cluster. Most of the infrastructure is provisioned with
 Terraform and is designed to be easily replaceable; the support server is the lone instance which is
 cared for as a [pet](http://cloudscaling.com/blog/cloud-computing/the-history-of-pets-vs-cattle/)
-rather than cattle.
+rather than cattle. This is very similar in concept to a bastion server, but with less of a focus on
+security, and more on cost savings and functionality.
 
-There are several important benefits of using a support server:
+The support server's functions include:
 
 1. Cluster members are provisioned with a random root password which is never exposed; **access is
    only granted via SSH public keys**, and never to `root` (after provisioning has finished).
@@ -67,7 +72,14 @@ There are several important benefits of using a support server:
    your support server host all your artifacts and serve them with [minio](https://min.io/) or even
    a plain HTTP server.
 
-## Safety First: Configuring TLS
+### A Note on IPv6
+
+Where possible, everything is configured to communicate over IPv6. Despite its slow adoption, IPv6
+is a good choice here because it is more efficient, opens up another possible route for cost savings
+due to the scarcity of IPv4 addresses, and VPS providers are more likely to support it than Internet
+Service Providers anyway.
+
+## Safety First: TLS
 
 In order to safely restrict access to cluster resources, the first step you'll want to take with
 your support server is to generate Certificate Authorities that can be used to configure TLS for
@@ -92,7 +104,7 @@ server under `/etc/ssl`:
     └── ca.pem
 {{</highlight>}}
 
-Each of these folders have permissions that look like this:
+Another important security note is that the key permissions should be as restrictive as possible:
 
 {{<highlight text>}}
 -r-------- 1 root root  227 Jul 23  2019 /etc/ssl/consul/ca-key.pem
@@ -103,7 +115,7 @@ Each of these folders have permissions that look like this:
 
 CFSSL is a general-purpose CLI tool for managing TLS files, but it also has the
 ability to run a server process for handling new certificate requests. That
-requires defining a configuration file at `/etc/ssl/cfssl.json`:
+requires defining a configuration file at `/etc/ssl/cfssl.json` on the support server:
 
 {{<highlight json>}}
 {
@@ -139,7 +151,7 @@ which is effectively just a multiplexer for CFSSL. By default, the CFSSL server 
 certificates for a single Certificate Authority; `multirootca` lets you run the server in a way that
 supports multiple authorities. It requires its own configuration file, but a very simple one:
 
-{{<highlight text>}}
+{{<highlight conf>}}
 [ consul ]
 private = file:///etc/ssl/consul/ca-key.pem
 certificate = /etc/ssl/consul/ca.pem
@@ -156,14 +168,16 @@ certificate = /etc/ssl/nomad/ca.pem
 config = /etc/ssl/cfssl.json
 {{</highlight>}}
 
-Running `multirootca` under systemd turns the support server into a central authority for issuing
-new certificates, which is required in order to spin up new servers securely.
+The `multirootca`
+[service](https://git.sr.ht/~damien/infrastructure/tree/master/services/support/multirootca.service)
+is then run under systemd so that it can keep running in the background, serving incoming
+certificate requests.
 
-Issuing new certificates is done via [this
-script](https://git.sr.ht/~damien/infrastructure/tree/master/scripts/issue-cert.sh), which is run
-from each new node that needs certificates, and uses the CFSSL CLI to make a `gencert` request to
-the running `multirootca` service. Like the support server, certs and keys all live under
-`/etc/ssl`, grouped by application name.
+Issuing new certificates is done from every cluster member via [this
+script](https://git.sr.ht/~damien/infrastructure/tree/master/scripts/issue-cert.sh), which uses the
+CFSSL CLI to make a `gencert` request to the running `multirootca` service on the support server.
+Like the support server, certs and keys on cluster members all live under `/etc/ssl`, grouped by
+application name, including the public key for the certificate authority.
 
 One thing to note is how Consul, Nomad, and Vault interact with each other, since that affects which
 certificates you need to issue. Vault depends on Consul, and Nomad depends on both Consul and Vault,
@@ -180,3 +194,83 @@ so an instance running a Nomad agent will have a lot of certificates in `/etc/ss
 -r-------- 1 nomad nomad 228 Jun 14 22:00 vault-key.pem
 -rw-r--r-- 1 nomad nomad 714 Jun 14 22:00 vault.pem
 {{</highlight>}}
+
+### A Note on Hostnames
+
+While working on this project, the most common TLS-related errors I encountered were "unknown
+certificate authority" and "bad hostname." The former is usually pretty easy to fix; just ensure
+`ca.pem` is available on every node and that it's being used as the relevant CA in the configs; but
+the latter requires a little more thought.
+
+Every node needs to consider how it is going to be queried. By default, `issue-cert.sh` considers
+only `localhost` to be a valid hostname, which means that only API requests to `localhost` will be
+accepted, which in turn means that all requests from another location (like the support server) will
+be rejected. If you want to query your node using another name, it needs to be included as a valid
+hostname when the certificate is issued.
+
+For all nodes, the public IP address is a common alternative hostname to specify. This will let you
+query the node from anywhere as long as your CLI is configured with its own valid certificate (a
+separate [script](https://git.sr.ht/~damien/infrastructure/tree/master/tools/issue-cert) makes this
+pretty easy; it's very similar to the one used during node provisioning, but it operates directly on
+the CA private key instead of using the remote).
+
+In addition, there are a couple special cases to consider:
+
+1. Consul services should add `<name>.service.consul` as a valid hostname. Both Nomad and Vault
+   servers register their own services, so they should add `nomad.service.consul` and
+   `vault.service.consul` respectively.
+2. All Nomad agents, both servers and clients, should add their [special
+   hostname](https://learn.hashicorp.com/nomad/transport-security/enable-tls#node-certificates),
+   which is constructed from the agent's role and region. All Nomad agents in my cluster stick with
+   the default region `global`, so Nomad servers use `server.global.nomad` and clients use
+   `client.global.nomad`.
+
+## Behind the Firewall
+
+With any cluster, a properly-configured firewall is a _must_. I use
+[`firewalld`](https://firewalld.org/), which is the new default for openSUSE, and it's not too
+difficult to configure.
+
+`firewalld` defines two important concepts for classifying incoming connections: **services** and
+**zones**. Services simply define a list of protocol/port pairs that are identified by a name; for
+example, the `ssh` service would be defined as `tcp/22`, because it requires TCP connections on port
+22. Zones, roughly speaking, are used to classify where a connection is coming from, and what should
+be done with it.
+
+The full list of features `firewalld` provides for zones is outside the scope of this post, and if
+you plan to use `firewalld`, it's probably good to [read
+more](https://www.linuxjournal.com/content/understanding-firewalld-multi-zone-configurations).
+However, it is still useful even with a very simple configuration.
+
+One benefit of having TLS configured for Consul, Nomad, and Vault is that it is perfectly safe to
+expose their ports to the world (i.e. any incoming connection on `eth0`), since connections will be
+rejected if they do not have a valid client certificate anyway. There is a lot of room for
+flexibility here though, and further restrictions may be wanted if you expect [sensitive
+information](https://www.youtube.com/watch?v=xpfCr4By71U) to go through your cluster.
+
+### Creating a Cluster-Only Zone
+
+The natural fit for a more secure zone is one that only processes requests coming from other nodes
+inside your cluster. While my setup leaves many ports open to the world, there is one exception:
+Nomad client dynamic ports. While connections to Nomad directly require a client certificate, I
+wanted my applications running on Nomad to be able to communicate with each other (more on that
+below), and that requires opening up the dynamic port range to the other Nomad clients.
+
+To do this, I created a new service called
+[`nomad-dynamic-ports`](https://git.sr.ht/~damien/infrastructure/tree/master/firewall/services/nomad-dynamic-ports.xml)
+that grants access to the [port
+range](https://www.nomadproject.io/docs/job-specification/network#dynamic-ports) used by Nomad. All
+applications running on Nomad that request a port will be assigned a random one from this range, so
+we want to open up the whole range, but _only to other Nomad clients_.
+
+Each Nomad client is provisioned with a zone called `nomad-clients`, which allows access to the
+`nomad-dynamic-ports` service, but with no other information. In order for this zone to work, we
+need to add the IP address of every other Nomad client as a source to this zone, and to do this for
+all the clients.
+
+To do this, I wrote a
+[script](https://git.sr.ht/~damien/infrastructure/tree/master/tools/update-nomad-client-firewall)
+that uses Terraform output to get a list of all the Nomad client IP addresses, then SSH on to each
+one and make the necessary updates. This script can be run automatically by Terraform with a
+[`null_resource`](https://registry.terraform.io/providers/hashicorp/null/latest/docs/resources/resource),
+which reduces maintenance burdens too.
