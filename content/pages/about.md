@@ -20,8 +20,8 @@ include
 
 1. Cats
 2. Coffee
-3. Spicy food
-4. Whisky and Beer
+3. Camping
+4. Board gaming
 
 The name of this blog is a reference to the opening line of Toxicity by System of a Down, and if you
 got the reference already, then congratulations, you are my favorite reader. 🌟
