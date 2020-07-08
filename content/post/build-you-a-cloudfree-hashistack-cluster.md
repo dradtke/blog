@@ -1,6 +1,6 @@
 +++
 date = "2020-06-25"
-title = "Build You a Cloud™-Free Hashistack Cluster"
+title = "Build You a Cloud™-Free Hashistack Cluster 🌥"
 draft = true
 +++
 
@@ -235,7 +235,8 @@ difficult to configure.
 **zones**. Services simply define a list of protocol/port pairs that are identified by a name; for
 example, the `ssh` service would be defined as `tcp/22`, because it requires TCP connections on port
 22. Zones, roughly speaking, are used to classify where a connection is coming from, and what should
-be done with it.
+be done with it, such as "for any connection to one of these services, from one of these IP
+addresses, accept it." Connections that aren't explicitly given access will be dropped by default.
 
 The full list of features `firewalld` provides for zones is outside the scope of this post, and if
 you plan to use `firewalld`, it's probably good to [read
@@ -243,8 +244,8 @@ more](https://www.linuxjournal.com/content/understanding-firewalld-multi-zone-co
 However, it is still useful even with a very simple configuration.
 
 One benefit of having TLS configured for Consul, Nomad, and Vault is that it is perfectly safe to
-expose their ports to the world (i.e. any incoming connection on `eth0`), since connections will be
-rejected if they do not have a valid client certificate anyway. There is a lot of room for
+open their ports to any incoming connection regardless of source IP, since connections will be
+rejected if they do not have a valid client certificate anyway.  There is a lot of room for
 flexibility here though, and further restrictions may be wanted if you expect [sensitive
 information](https://www.youtube.com/watch?v=xpfCr4By71U) to go through your cluster.
 
@@ -264,13 +265,13 @@ applications running on Nomad that request a port will be assigned a random one 
 we want to open up the whole range, but _only to other Nomad clients_.
 
 Each Nomad client is provisioned with a zone called `nomad-clients`, which allows access to the
-`nomad-dynamic-ports` service, but with no other information. In order for this zone to work, we
-need to add the IP address of every other Nomad client as a source to this zone, and to do this for
-all the clients.
+`nomad-dynamic-ports` service, but with no other information, so by default no connections will land
+in this zone. In order for it to work, we need to add the IP address of every other Nomad client as
+a source to this zone, and to do this for all the clients.
 
 To do this, I wrote a
 [script](https://git.sr.ht/~damien/infrastructure/tree/master/tools/update-nomad-client-firewall)
 that uses Terraform output to get a list of all the Nomad client IP addresses, then SSH on to each
 one and make the necessary updates. This script can be run automatically by Terraform with a
 [`null_resource`](https://registry.terraform.io/providers/hashicorp/null/latest/docs/resources/resource),
-which reduces maintenance burdens too.
+which will help keep things in sync.
