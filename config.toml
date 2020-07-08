@@ -12,7 +12,7 @@ pygmentsOptions = "nowrap=true"
 resourceDir = "/tmp/resources"
 
 [params]
-description = "Occasional posts about programming."
+description = "Fixes many known issues with version 6.0"
 
 [[menu.main]]
 identifier = "home"
