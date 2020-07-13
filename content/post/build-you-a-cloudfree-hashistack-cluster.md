@@ -10,7 +10,7 @@ draft = true
 2. [Getting Started](#getting-started)
 3. [Safety First: TLS](#safety-first-tls)
 4. [Behind the Firewall](#behind-the-firewall)
-5. Provisioning with Terraform
+5. [Provisioning with Terraform](#provisioning-with-terraform)
 6. Running a Website
 
 ## Preface
@@ -275,3 +275,71 @@ that uses Terraform output to get a list of all the Nomad client IP addresses, t
 one and make the necessary updates. This script can be run automatically by Terraform with a
 [`null_resource`](https://registry.terraform.io/providers/hashicorp/null/latest/docs/resources/resource),
 which will help keep things in sync.
+
+## Provisioning With Terraform
+
+Terraform was not actually my go-to solution for provisioning. Initially my plan was to stay simple
+and stick with scripts like `deploy-new-server.sh` using Linode's API, but I ended up moving over to
+Terraform for one big reason: state management. Terraform's big win is keeping track of what you've
+already deployed, which makes cluster management much easier. In particular, you can provision your
+client nodes with [existing
+knowledge](https://git.sr.ht/~damien/infrastructure/tree/c97e0e2b/terraform/nomad-client/main.tf#L70-74)
+of your Consul servers, and write
+[scripts](https://git.sr.ht/~damien/infrastructure/tree/master/tools/update-nomad-client-firewall)
+that can use that knowledge after-the-fact to make additional changes. All of these operations are
+much easier with a state management tool than they would be if you had to query your VPS' API every
+time you wanted to know a node's IP address.
+
+### Overall Structure
+
+[How to organize Terraform code](https://duckduckgo.com/?q=how+to+organize+terraform+files) is a
+question of constant debate, and the right answer is that there is no right answer. A lot of it
+depends on how you organize your teams, so bear in mind that my cluster is maintained by a team of
+one.
+
+My module structure has one top-level module, with one module for each "role" that my nodes will
+play:
+
+{{<highlight text>}}
+├── main.tf
+├── outputs.tf
+├── secrets.tfvars
+├── consul-server
+│   ├── main.tf
+│   ├── outputs.tf
+│   └── variables.tf
+├── nomad-client
+│   ├── main.tf
+│   ├── outputs.tf
+│   └── variables.tf
+├── nomad-server
+│   ├── main.tf
+│   ├── outputs.tf
+│   └── variables.tf
+└── vault-server
+    ├── main.tf
+    ├── outputs.tf
+    └── variables.tf
+{{</highlight>}}
+
+Each of these modules has a number of variables in common, including how many instances to create,
+which image to use when creating the node, and a couple of other values. Most of their inputs are
+the same, but this provides a lot of flexibility, and common values are usually sourced from a block
+of shared `locals`.
+
+This setup has several advantages, primarily flexibility and a [top-level
+`main.tf`](https://git.sr.ht/~damien/infrastructure/tree/master/terraform/main.tf) that is able to
+describe the makeup of your cluster very cleanly, but the downside is that it is fairly verbose
+within the module definitions. Terraform doesn't appear to provide any utilities for defining a
+set of provisioners that can be shared across resources, which would help quite a bit.
+
+### Division of Provision
+
+The provisioning of a new node is split between a custom
+[stackscript](https://git.sr.ht/~damien/infrastructure/tree/master/stackscripts/cluster-member.sh)
+and Terraform [provisioners](https://www.terraform.io/docs/provisioners/index.html). The stackscript
+installs packages and does other configuration that is common across nodes, while the Terraform
+provisioners are used to copy [configuration
+files](https://git.sr.ht/~damien/infrastructure/tree/master/config) up from the infra repo directly
+and to write configuration files that are dependent on cluster knowledge, such as the addresses of
+the Consul servers.
