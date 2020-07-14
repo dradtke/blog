@@ -343,3 +343,47 @@ provisioners are used to copy [configuration
 files](https://git.sr.ht/~damien/infrastructure/tree/master/config) up from the infra repo directly
 and to write configuration files that are dependent on cluster knowledge, such as the addresses of
 the Consul servers.
+
+An alternative, and arguably better, setup would be to use [Packer](https://www.packer.io/) to
+define the node images, leaving nothing for Terraform to do except deploy instances and do the
+little configuration that requires cluster knowledge. Unfortunately, this is an area where Linode
+may not be a great choice; while Packer does support a Linode image builder, custom Linode images
+don't appear to be compatible with their network helper tool, which causes basic networking to be
+[broken by default](https://git.sr.ht/~damien/infrastructure/tree/c97e0e2b/packer/README.md).
+
+### Naming Things
+
+Initially, I took a very simple approach to naming nodes by their role, region, and an index, such
+as `nomad-server-ca-central-1`. However, this approach lacks flexibility when it comes to upgrading
+your cluster. If you want to replace a node, it is safest to create a new one and make sure it's up
+and running before destroying the old one, but now your carefully numbered servers are no longer in
+order.
+
+Fortunately, Terraform provides a [random
+provider](https://registry.terraform.io/providers/hashicorp/random/latest/docs) that can be used to
+name your nodes instead by generating random identifiers. I use something similar to this:
+
+{{<highlight hcl>}}
+resource "random_id" "servers" {
+    count = var.servers
+    keepers = {
+        datacenter     = var.datacenter
+        image          = var.image
+        instance_type  = var.instance_type
+        consul_version = var.consul_version
+        nomad_version  = var.nomad_version
+    }
+    byte_length = 4
+}
+
+resource "linode_instance" "servers" {
+    count = var.servers
+    label = "nomad-server-${var.datacenter}-${replace(random_id.servers[count.index].b64_url, "-", "_")}"
+}
+{{</highlight>}}
+
+This gives each Nomad server a name like `nomad-server-ca-central-XXXXXX`, where `XXXXXX` is a
+base64-encoded random string. The URL-safe base64-encoding is used, but Linode doesn't allow two
+consecutive dashes in instance labels, so the `replace()` function is used to replace dashes with
+underscores in order to prevent a provision failure caused by a dash as the first letter in a server
+id. (It's happened to me once already, not a fun reason for the apply to fail)
