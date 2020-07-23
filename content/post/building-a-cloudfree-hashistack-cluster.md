@@ -1,6 +1,6 @@
 +++
 date = "2020-06-25"
-title = "Build You a Cloud™-Free Hashistack Cluster 🌥"
+title = "Building a Cloud™-Free Hashistack Cluster 🌥"
 draft = true
 +++
 
@@ -10,8 +10,8 @@ draft = true
 2. [Getting Started](#getting-started)
 3. [Safety First: TLS](#safety-first-tls)
 4. [Behind the Firewall](#behind-the-firewall)
-5. [Provisioning with Terraform](#provisioning-with-terraform)
-6. Running a Website
+5. [Provisioning With Terraform](#provisioning-with-terraform)
+6. [Running a Website](#running-a-website)
 
 ## Preface
 
@@ -387,3 +387,20 @@ base64-encoded random string. The URL-safe base64-encoding is used, but Linode d
 consecutive dashes in instance labels, so the `replace()` function is used to replace dashes with
 underscores in order to prevent a provision failure caused by a dash as the first letter in a server
 id. (It's happened to me once already, not a fun reason for the apply to fail)
+
+## Running a Website
+
+At this point, we've covered pretty much everything you need to be able to spin up a functional
+cluster.  However, as I mentioned before, this blog is currently running on my own cluster, and
+there are a number of extra steps that need to be taken in order to support running a website. In
+this section, I will cover the points that are specific to running a website on this setup. While
+web servers are similar to any other job type in many respects, there are a few additional concerns
+that bear special mention.
+
+### Load Balancing
+
+### DNS Management
+
+### Cert Renewals
+
+<!-- vim: set tw=100: -->
