@@ -399,6 +399,36 @@ that bear special mention.
 
 ### Load Balancing
 
+Running a website on Nomad makes it easy to scale up, but running more than one instance of a server
+requires some form of load balancer. The big name in load balancers is
+[HAProxy](http://www.haproxy.org/), but a few newer ones can take advantage of Consul's
+service-registration features in order to "just work" with no or minimal configuration. For this
+website I chose [Fabio](https://fabiolb.net/), but [Traefik](https://docs.traefik.io/) is another
+good option.
+
+Regardless of which you choose, you will then have to decide how to run it. Naturally, I decided to
+run Fabio as a [Nomad
+job](https://git.sr.ht/~damien/infrastructure/tree/master/jobs/fabio.nomad.erb) too, but due to the
+nature of load balancing, it has tighter restrictions for how it can run. Most jobs, including the
+web server itself, don't actually care which nodes they run on, but load balancers need their host
+to be registered with DNS. This means that we need the nodes themselves to know whether they are
+intended to run a load balancer or not.
+
+Nomad provides a number of filtering options for jobs including custom metadata, but I decided to go
+with the [`node_class`](https://www.nomadproject.io/docs/configuration/client#node_class) attribute.
+This is a custom value that you can asign each Nomad client explicitly for filtering purposes, and
+has the added benefit over custom metadata of being included in node status output:
+
+{{<highlight text>}}
+damien@support:~> nomad node status
+ID        DC          Name                            Class          Drain  Eligibility  Status
+e9d5cdfe  ca-central  nomad-client-ca-central-UgcT5Q  load-balancer  false  eligible     ready
+67d7b064  ca-central  nomad-client-ca-central-4XMmYQ  <none>         false  eligible     ready
+{{</highlight>}}
+
+The `nomad-client` Terraform module accepts `node_class` as a variable, so the above is defined in
+`main.tf` as two instances of the module with different `node_class` inputs.
+
 ### DNS Management
 
 ### Cert Renewals
