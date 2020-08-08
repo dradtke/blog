@@ -399,8 +399,8 @@ that bear special mention.
 
 ### Load Balancing
 
-Running a website on Nomad makes it easy to scale up, but running more than one instance of a server
-requires some form of load balancer. The big name in load balancers is
+Running a website on Nomad makes it easy to scale up, but running more than one instance of a web
+server requires some form of load balancer. The big name in load balancers is
 [HAProxy](http://www.haproxy.org/), but a few newer ones can take advantage of Consul's
 service-registration features in order to "just work" with no or minimal configuration. For this
 website I chose [Fabio](https://fabiolb.net/), but [Traefik](https://docs.traefik.io/) is another
@@ -426,10 +426,62 @@ e9d5cdfe  ca-central  nomad-client-ca-central-UgcT5Q  load-balancer  false  elig
 67d7b064  ca-central  nomad-client-ca-central-4XMmYQ  <none>         false  eligible     ready
 {{</highlight>}}
 
-The `nomad-client` Terraform module accepts `node_class` as a variable, so the above is defined in
-`main.tf` as two instances of the module with different `node_class` inputs.
+Fabio jobs can then be specified to run exclusively on `load-balancer` nodes with:
+
+{{<highlight htcl>}}
+constraint {
+	attribute = "${node.class}"
+	value     = "load-balancer"
+}
+{{</highlight>}}
+
 
 ### DNS Management
+
+Once the `load-balancer` node is up and running an instance of Fabio, everything should
+_technically_ be available on the internet, but it won't be very easy to reach without a domain
+name. However, it would also be a pain to manually update a DNS management system with new records
+every time your cluster changes.
+
+Fortunately, DNS records can be considered just another part of your infrastructure, and can
+therefore be provisioned with Terraform! This means that any time a new `load-balancer` node is
+created or destroyed, a DNS record is created or destroyed along with it, automatically keeping your
+domain name in sync with available load balancers.
+
+To support this, I defined a Terraform module called
+[`domain-address`](https://git.sr.ht/~damien/infrastructure/tree/master/terraform/domain-address),
+which takes as input the domain, a name for the record, and a list of Linode instances. The
+`linode_domain_record` resource can then be used to define `A` and/or `AAAA` records pointing to the
+IPv4 and/or IPv6 addresses respectively:
+
+{{<highlight htcl>}}
+data "linode_domain" "d" {
+  domain = var.domain
+}
+
+resource "linode_domain_record" "a" {
+  for_each    = toset(terraform.workspace == "default" ? var.instances[*].ip_address : [])
+  domain_id   = data.linode_domain.d.id
+  name        = var.name
+  record_type = "A"
+  target      = each.value
+}
+
+resource "linode_domain_record" "aaaa" {
+  for_each    = toset(terraform.workspace == "default" ? [for ip in var.instances[*].ipv6 : split("/", ip)[0]] : [])
+  domain_id   = data.linode_domain.d.id
+  name        = var.name
+  record_type = "AAAA"
+  target      = each.value
+}
+{{</highlight>}}
+
+One thing to note here is the `terraform.workspace` check within the `for_each` line. This is to
+support development flows that use [Terraform
+workspaces](https://www.terraform.io/docs/state/workspaces.html), which can be useful for testing
+cluster changes (such as OS upgrades) without affecting the existing deployment. DNS records are
+global, so we use this check to ensure that they are only created within the default workspace and
+aren't overwritten to point to a non-production cluster.
 
 ### Cert Renewals
 
