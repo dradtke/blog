@@ -485,4 +485,35 @@ aren't overwritten to point to a non-production cluster.
 
 ### Cert Renewals
 
+The last step is to set up automatic SSL certificate renewal. If you don't need or want to serve
+your website over HTTPS, then you can skip this step, but most websites should probably be served
+securely and therefore will need SSL.
+
+In addition to providing orchestration for always-on services, Nomad supports something akin to cron
+jobs in the form of the
+[`periodic`](https://www.nomadproject.io/docs/job-specification/periodic.html) stanza. With this, we
+can write a Nomad job that executes our SSL renewal regularly so that its validity never lapses.
+
+#### Getting the Certificate
+
+The first step is deciding which SSL renewal service and tool to go with. [Let's
+Encrypt](https://letsencrypt.org/) is the big name in this space because it's free and run by a
+nonprofit, but that's not a hard requirement as long as whichever service you choose has APIs for
+automatic renewal.
+
+For tool, I decided to go with [acme.sh](https://github.com/acmesh-official/acme.sh), because it
+provides a nice interface with minimal dependencies, though there are a number of [other
+options](https://letsencrypt.org/docs/client-options/) available for any ACME-compatible service.
+
+##### The Challenge
+
+The ACME protocol requires you to be able to prove that you own the domain being renewed through a
+[challenge](https://tools.ietf.org/html/rfc8555#section-8), with the two main options being HTTP
+and DNS. HTTP challenges work by giving you some data and verifying its existence under
+`http://<domain>/.well-known/acme-challenge/`; DNS challenges work similarly, but the
+challenge expects the data to be available as a TXT record on the domain.
+
+Due to the distributed nature of jobs running on Nomad, the HTTP challenge is not really viable, so
+I recommend using the DNS challenge along with your DNS provider's API.
+
 <!-- vim: set tw=100: -->
