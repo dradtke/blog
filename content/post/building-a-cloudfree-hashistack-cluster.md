@@ -1,7 +1,6 @@
 +++
-date = "2020-06-25"
+date = "2020-09-12"
 title = "Building a Cloud™-Free Hashistack Cluster 🌥"
-draft = true
 +++
 
 ## Table of Contents
@@ -12,30 +11,34 @@ draft = true
 4. [Behind the Firewall](#behind-the-firewall)
 5. [Provisioning With Terraform](#provisioning-with-terraform)
 6. [Running a Website](#running-a-website)
+6. [Final Thoughts](#final-thoughts)
 
 ## Preface
 
 "Hashistack" refers to a network cluster based on [HashiCorp](https://www.hashicorp.com/) tools, and
-after spending some time on it off-and-on, the architecture of my own cluster (on which this blog is
-running, among other personal projects) has finally stabilized. In this post I will walk you through
-its high-level structure, some of the benefits provided, and hopefully show you how you can build a
-similar cluster for your personal or professional projects.
+after off-and-on spending a considerable amount of time on it, the architecture of my own cluster
+(on which this blog is running, among other personal projects) has finally (mostly) stabilized. In
+this post I will walk you through its high-level structure, some of the benefits provided, and
+hopefully show you how you can build a similar cluster for your personal or professional projects.
 
-For the impatient, everything I am talking about here is available publicly in my [infrastructure
-repo](https://git.sr.ht/~damien/infrastructure/). For the more patient, read on.
+Everything I discuss here is available publicly in my [infrastructure
+repo](https://git.sr.ht/~damien/infrastructure/). I reference it frequently, and some may find it
+helpful simply to browse through that code.
 
 ## The Cloud™
 
-The term "cloud" can be pretty ambiguous, but usually refers to some version of a platform providing
-managed services beyond a simple Virtual Private Server, or VPS. In this post, I want to draw a
+The term "cloud" is not very well-defined, but usually refers to those platforms that provide
+managed services beyond Virtual Private Server (VPS) provisioning. In this post, I want to draw a
 distinction between VPS providers and Cloud™ providers. While there are many different VPS
-providers, here I use the term Cloud™ to refer to the big 3: AWS, Azure, and GCP.
+providers, here I use the term Cloud™ to refer to the big 3: Amazon Web Services, Microsoft Azure,
+and Google Cloud Platform.
 
-There is nothing inherently wrong with building applications on the Cloud™, but almost by
-definition, there is less to discuss here, especially with the recent launch of [HashiCorp Cloud
-Platform](https://www.hashicorp.com/cloud-platform/). These services let you get up and running
-quickly, but also often come with a hefty price tag. Sticking with VPS providers can save you money
-and, in my opinion, is more fun.
+There is nothing inherently wrong with building applications on the Cloud™, but it's an area that is
+already heavily discussed and supported, especially with the recent launch of [HashiCorp Cloud
+Platform](https://www.hashicorp.com/cloud-platform/). The benefit of these services is that they let
+you get up and running quickly, but they also often come with a hefty price tag, and can make it
+harder to switch providers in the future for cost or other reasons. Using VPS providers can save you
+money, makes it easier to switch and, in my opinion, is more fun.
 
 My cluster is built on [Linode](https://www.linode.com/) because they offer openSUSE VPS images and
 DNS management. However, this guide should still be relevant no matter what distribution you're
@@ -428,7 +431,7 @@ e9d5cdfe  ca-central  nomad-client-ca-central-UgcT5Q  load-balancer  false  elig
 
 Fabio jobs can then be specified to run exclusively on `load-balancer` nodes with:
 
-{{<highlight htcl>}}
+{{<highlight hcl>}}
 constraint {
 	attribute = "${node.class}"
 	value     = "load-balancer"
@@ -454,7 +457,7 @@ which takes as input the domain, a name for the record, and a list of Linode ins
 `linode_domain_record` resource can then be used to define `A` and/or `AAAA` records pointing to the
 IPv4 and/or IPv6 addresses respectively:
 
-{{<highlight htcl>}}
+{{<highlight hcl>}}
 data "linode_domain" "d" {
   domain = var.domain
 }
@@ -514,6 +517,34 @@ and DNS. HTTP challenges work by giving you some data and verifying its existenc
 challenge expects the data to be available as a TXT record on the domain.
 
 Due to the distributed nature of jobs running on Nomad, the HTTP challenge is not really viable, so
-I recommend using the DNS challenge along with your DNS provider's API.
+I recommend using the DNS challenge along with your DNS provider's API, such as
+[`dns_linode_v4`](https://github.com/acmesh-official/acme.sh/wiki/dnsapi#cloud-manager).
+
+##### Storing Certificates in Vault
+
+Fabio supports loading SSL certificates from
+[Vault](https://github.com/fabiolb/fabio/wiki/Certificate-Stores#vault-kv), so after the challenge
+succeeds, that's where we will want to save the cert and key. However, this also becomes a little
+tricky due to the distributed nature of this job, since Vault will be running on a different server.
+
+Fortunately, Vault has an HTTP API, so as long as we have the address of at least one available
+Vault server and a valid token, the job can send an HTTPS request with the new cert and key
+contents. With `acme.sh`, this takes the form of specifying `--reloadcmd` and a script like
+[`vault-write-certs.sh`](https://git.sr.ht/~damien/infrastructure/tree/master/artifacts/vault-write-certs.sh),
+which can be made available as a downloadable artifact that Nomad will make available to the renewal
+job.
+
+## Final Thoughts
+
+The architecture described in this post was born out of a desire to better understand how cluster
+networking works, a general interest in HashiCorp tools and philosophies, and a purely pragmatic
+desire to be able to avoid cloud vendor lock-in when needed.
+
+This post was written over the span of several months and ended up being pretty long, so it may not
+be the easiest to read, and some of its links may also fall out of date as I continue making updates
+to my architecture.
+
+If you find anything that's broken, or you just have a question or comment, feel free to shoot me an
+[✉️ email](<mailto:blog@damienradtke.com?subject=RE: Building a Cloud-Free Hashistack Cluster>).
 
 <!-- vim: set tw=100: -->
