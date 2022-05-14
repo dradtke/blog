@@ -28,3 +28,6 @@ url = "https://github.com/dradtke/"
 identifier = "sourcehut"
 name = "Projects — Sourcehut"
 url = "https://git.sr.ht/~damien"
+
+[security.funcs]
+getenv = ['^NOMAD_']
