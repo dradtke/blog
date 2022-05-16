@@ -16,12 +16,11 @@ web and off. Electron and React Native take the web technology stack and deploy 
 or phone, respectively, as a standalone application.
 
 By contrast, client-server application deployment is not widely used outside of the web in which it
-originated. Desktop application stacks, such as GTK (which is the focus of this post), are only
-really used as fully client-side applications. Application logic runs directly on the client
-machine, and any update requires users to download and install the new version.
+originated. Desktop application stacks, such as GTK (which is the focus of this post), traditionally
+only run on the client.
 
-In this post, I want to demonstrate a proof-of-concept GTK application using the client-server
-deployment model pioneered by the web.
+In this post, I want to demonstrate a technique for building GTK applications like they were
+websites, using the client-server deployment model.
 
 ## ...but why?
 
@@ -35,14 +34,13 @@ now being used to do so much more. By contrast, development stacks such as GTK w
 applications from the start, and as a result, come with many useful features that web applications
 need to either build from scratch, or import from a third-party library.
 
-However, GTK applications lack the web's deployment model. The web's model is enviable because it
-allows applications to receive updates that users don't need to install. As soon as an update is
-made live, everyone immediately has access to it (after a refresh, of course).
+However, GTK applications lack the web's flexibility. When an update is made to a GTK application,
+all users need to download the update and install it; when an update is made to a web application,
+it does not require any installation, and the changes are immediately available for all possible
+clients (after a refresh, of course).
 
-## Isn't that a whole lot of work, though?
-
-GTK already has support for markup-based rendering in the form of UI files, so we don't have to
-build any of the rendering from scratch. This vastly simplifies the work involved, and means that
+Also, GTK already has support for markup-based rendering in the form of UI files, so we don't have
+to build any of the rendering from scratch. This vastly simplifies the work involved, and means that
 the task is mostly one of gluing together existing components, rather than building something new.
 
 <!--
@@ -65,19 +63,20 @@ allows you to access a running application remotely through your browser, but th
 downsides: no automatic session management, reliance on websockets, and still requires the use of an
 existing web browser. Plus my way is more fun)
 
-As mentioned earlier, the web consists of both the client-server deployment model that we are
-attempting to emulate, and the web frontend technologies used for rendering and scripting. So, in
-order to get similar behavior out of a GTK application, we need to find replacements for those:
+So, that's the goal. In order to get there, we need to break it down into (some of) the individual
+features provided by your average web browser:
 
-| Web Technology | Replacement |
-|----------|----------|
-| HTML   | XML-based UI definitions |
-| CSS | CSS |
-| JavaScript | Any embeddable scripting language (I've gone with Lua) |
+1. [Rendering](#rendering)
+2. [Scripting](#scripting)
+3. [Linking](#linking)
+4. [Styling](#styling)
+5. [Submitting forms](#submitting-forms)
+6. Miscellaneous (page title)
 
-## I'm still not sold.
+# Rendering
 
-Well, then let's show a concrete example.
+The most basic, fundamental feature we need is the ability to render an application. In order to do
+that, we first need a canvas:
 
 {{< figure src="/images/gtk-like-web/webby.png" class="regular" >}}
 
@@ -123,7 +122,7 @@ With this running, we can now navigate to `http://localhost:8000/` and see what 
 
 {{< figure src="/images/gtk-like-web/webby-hello.png" class="regular" >}}
 
-## Wait, what's happening here?
+In a nutshell, here is what's happening:
 
 1. We are making a GET request to `http://localhost:8000/`, which returns the user interface
    definition returned by our Rocket application.
@@ -140,9 +139,12 @@ of basically arbitrary complexity. By using [Glade](https://glade.gnome.org/), y
 quickly build fairly complex interfaces, and anything contained within a `body` widget will be
 rendered by Webby.
 
-## That's cool, but the button doesn't seem to do anything.
+In order to really do something with this, we need to introduce some additional features.
 
-Yes, that is true; in order for the button to do anything, we need to handle its `clicked` signal.
+# Scripting
+
+Continuing with the example above, in order for the button to do anything, we need to handle its
+`clicked` signal.
 
 The Builder way of doing this would be to define a `<signal>`
 [element](https://docs.gtk.org/gtk4/class.Builder.html#signal-handlers-and-function-pointers), but
@@ -186,37 +188,7 @@ There are a couple key differences here:
    non-MIME format. Only `lua` is supported, but this provides an easy extension point for adding
    new languages.
 
-To put this into context, here is what our updated interface description would look like with
-scripting:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<interface>
-	<!-- Script tags can be placed anywhere, so why not at the top? -->
-	<web:script type="lua">
-	  print("hello world")
-	</web:script>
-
-    <object class="GtkBox" id="body">
-        <property name="orientation">vertical</property>
-        <property name="halign">start</property>
-        <child>
-            <object class="GtkButton">
-                <property name="label">Click Me</property>
-            </object>
-        </child>
-    </object>
-</interface>
-```
-
-## But the button still doesn't do anything.
-
-Yes, I'm getting to that. In order to specify custom `clicked` signal behavior, we first have to
-enable custom behavior, which is what we've now accomplished by adding scripting support.
-
-You are right, though, that running scripts is not super useful if we can't interact with the
-rendered application. Printing _hello world_ is great and all, but how can we have it wait until the
-button is clicked?
+Using this capability, here is how we might connect a signal handler to our button:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -241,23 +213,88 @@ button is clicked?
 </interface>
 ```
 
-Now the application won't print _hello world_ when it loads, but will instead show this when you
-click the button:
+Now when we click the button, we get this:
 
 {{< figure src="/images/gtk-like-web/alert.png" class="regular" >}}
 
-## Okay that's pretty cool, but care to explain how that works?
+Neat! In order to facilitate this, we need to initialize the Lua virtual machine with a few things:
 
-Sure. When we initialize the Lua virtual machine, we register a couple useful things:
+1. Two global functions: `alert()` and `find_widget()`.
+2. A custom `Widget` user data type, which is returned by `find_widget()`.
+3. A `connect()` method on the `Widget` type.
 
-1. A custom `Widget` user data type, which defines a `connect()` instance method.
-2. A global `find_widget()` function, which takes a widget ID and returns a `Widget` object.
-3. A global `alert()` function, which takes a message and displays it in a new dialog.
+Other functions are available as well (notably `widget:get_property()` and `widget:set_property()`),
+so there's quite a bit of flexibility in what you can do.
 
-With a little additional work, other types, methods, and functions can be made accessible to Lua.
-Notably, you can also get or set arbitrary GObject properties on widgets, which provides a large
-amount of flexibility.
+# Linking
 
-TODO: href linking, CSS styling, form submissions
+One common, but simple feature supported by websites is the ability to link to other pages. In order
+to support that use-case, Webby adds support for a custom attribute for buttons (and theoretically,
+any widget that supports the `clicked` signal):
+
+```xml
+<object class="GtkButton" web:href="/about">
+	<property name="label">About</property>
+</object>
+```
+
+The `web:href` attribute specifies a URL, either relative or absolute, and will tell Webby to
+automatically configure a `clicked` signal handler that will tell Webby to navigate to the requested
+URL.
+
+# Styling
+
+Just like the web, GTK supports CSS [natively](https://docs.gtk.org/gtk4/css-overview.html), so all
+we need to do to enable styling is extend the UI format to support it:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+	<!-- This tag is analgous to HTML's <style> tag -->
+	<web:style>
+		#body {
+			font-size: x-large;
+		}
+
+		.red {
+			color: shade(red, 1.6);
+		}
+
+		.blue {
+			color: shade(blue, 1.6);
+		}
+	</web:style>
+
+	<object class="GtkBox" id="body">
+		<property name="orientation">vertical</property>
+		<property name="halign">start</property>
+		<property name="name">body</property> <!-- the 'name' property defines the CSS ID -->
+		<child>
+			<object class="GtkLabel">
+				<style><class name="red"/></style>
+				<property name="label">This line is red,</property>
+			</object>
+		</child>
+		<child>
+			<object class="GtkLabel">
+				<style><class name="blue"/></style>
+				<property name="label">and this one is blue!</property>
+			</object>
+		</child>
+	</object>
+</interface>
+```
+
+Here is the rendered result:
+
+{{< figure src="/images/gtk-like-web/styling.png" class="regular" >}}
+
+__Note__: The `id` object attribute defines the object ID for Builder access, but it does _not_
+actually define the ID for styling. That is actually handled instead by the
+[name](https://docs.gtk.org/gtk4/property.Widget.name.html) property. For consistency, the Builder's
+ID and the widget name are set to the same value, `body`, but they are separate concepts and are
+used for different things.
+
+# Submitting Forms
 
 <!-- vim: set tw=100: -->
