@@ -1,6 +1,6 @@
 +++
-date = "2022-05-06"
-title = "Building GTK Applications Like Websites"
+date = "2022-05-18"
+title = "Building GTK4 Applications Like Websites"
 draft = true
 +++
 
@@ -15,12 +15,17 @@ Whether you love it or hate it, web rendering and interaction technology is wide
 web and off. Electron and React Native take the web technology stack and deploy it to your desktop
 or phone, respectively, as a standalone application.
 
-By contrast, client-server application deployment is not widely used outside of the web in which it
+By contrast, the client-server deployment model is not widely used outside of the web in which it
 originated. Desktop application stacks, such as GTK (which is the focus of this post), traditionally
 only run on the client.
 
 In this post, I want to demonstrate a technique for building GTK applications like they were
 websites, using the client-server deployment model.
+
+_For reference, full source code for the prototype and a number of examples can be seen at
+https://git.sr.ht/~damien/gtk-webby_
+
+{{< figure src="https://imgs.xkcd.com/comics/installing.png" class="regular" >}}
 
 ## ...but why?
 
@@ -43,16 +48,6 @@ Also, GTK already has support for markup-based rendering in the form of UI files
 to build any of the rendering from scratch. This vastly simplifies the work involved, and means that
 the task is mostly one of gluing together existing components, rather than building something new.
 
-<!--
-As an aside: the intended audience of this post is, primarily, teams that are building internal
-applications as part of their tooling. While there is no technical reason that this technology
-couldn't be used for consumer-facing applications, it is unrealistic to expect your average consumer
-to download a separate "browser" with minimal features to access certain "websites." However, for
-teams with relatively little web development experience that want to build internal applications,
-the approach I outline here ensures that everyone is running the latest version, and users will only
-have to download the client application once.
--->
-
 ## So you're basically building a new browser?
 
 Kind of. The goal is to have users download a single application that behaves similarly to
@@ -70,8 +65,13 @@ features provided by your average web browser:
 2. [Scripting](#scripting)
 3. [Linking](#linking)
 4. [Styling](#styling)
-5. [Submitting forms](#submitting-forms)
-6. Miscellaneous (page title)
+5. [Submitting Forms](#submitting-forms)
+6. [Page Title](#page-title)
+
+After that, I'll end on
+
+7. [Missing Features](#missing-features)
+8. [Final Thoughts](#final-thoughts)
 
 # Rendering
 
@@ -245,12 +245,16 @@ URL.
 # Styling
 
 Just like the web, GTK supports CSS [natively](https://docs.gtk.org/gtk4/css-overview.html), so all
-we need to do to enable styling is extend the UI format to support it:
+we need to do to enable styling is extend the UI format to support it.
+
+This example introduces the `web:style` tag, which contains CSS code to apply to the interface:
+
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
-	<!-- This tag is analgous to HTML's <style> tag -->
+	<!-- This tag contains CSS styles to apply to the rendered
+	     application. -->
 	<web:style>
 		#body {
 			font-size: x-large;
@@ -289,6 +293,9 @@ Here is the rendered result:
 
 {{< figure src="/images/gtk-like-web/styling.png" class="regular" >}}
 
+For more information on the specific properties used here, see the CSS property
+[documentation](https://docs.gtk.org/gtk4/css-properties.html).
+
 __Note__: The `id` object attribute defines the object ID for Builder access, but it does _not_
 actually define the ID for styling. That is actually handled instead by the
 [name](https://docs.gtk.org/gtk4/property.Widget.name.html) property. For consistency, the Builder's
@@ -296,5 +303,116 @@ ID and the widget name are set to the same value, `body`, but they are separate 
 used for different things.
 
 # Submitting Forms
+
+Forms are a little trickier to introduce to the UI definition. Here is a short example of how you
+would build a web form in a browser:
+
+```html
+<!-- Example of a simple form in a web browser using HTML -->
+<form method="POST">
+  <input type="text" name="username" placeholder="username">
+  <input type="password" name="password" placeholder="password">
+  <input type="submit" value="Log In">
+</form>
+```
+
+The `form` tag encapsulates a number of `input` tags, and the browser automatically provides a
+"submit form" action that is invoked when the submit button is clicked. That action will take the
+name and current value from every input tag, encode those into a request body (generally as
+`application/x-www-form-urlencoded`), and submit it as an HTTP request with the specified method.
+
+In order to translate this behavior into something GTK-native, we would need to add quite a bit of
+logic to our UI parsing code.
+
+A simpler and more flexible solution is to use our existing scripting capabilities. It requires a
+little more code, but it doesn't require us to extend the UI format at all, and it's still pretty
+easy to see what's going on:
+
+```lua
+-- This would be placed inside a <web:script type="lua"> tag.
+-- A full example can be seen in Webby's repo at examples/forms/
+-- TODO: put a URL
+function login()
+	local username = find_widget("username"):get_text()
+	local password = find_widget("password"):get_text()
+	submit_form("POST", "", {username=username, password=password})
+end
+
+find_widget("submit"):connect("clicked", false, login)
+find_widget("username"):connect("activate", false, login)
+find_widget("password"):connect("activate", false, login)
+```
+
+The `submit_form()` function takes three arguments:
+
+1. A method, in this case `POST`
+2. An action, in this case an empty string, which tells Webby to use the current location
+3. A table containing key-value form value pairs
+
+The form data will be encoded the same way a browser would do it, and the result submitted to the
+web server.
+
+## Cookie Support
+
+While not strictly related to form processing, Webby's internal HTTP client supports cookies, which
+work well with forms that need to save session data. Here are some screenshots from the included
+forms example:
+
+{{< figure src="/images/gtk-like-web/login-form-1.png" class="regular" >}}
+
+When this form is submitted, it will make a POST request to `http://localhost:8004/` with the
+entered username and password as form fields. After processing, the page will refresh, this time
+with cookie session information.
+
+{{< figure src="/images/gtk-like-web/login-form-2.png" class="regular" >}}
+
+# Page Title
+
+A very small, but important feature for user experience on the web is the ability to set the page
+title. By default, the current URL is shown as the title, but that's not very readable.
+
+In HTML this is done with a `<title>` tag within a `<head>` tag. For Webby, page metadata is added
+using attributes on a `<web:page>` tag:
+
+```xml
+<web:page title="Index"/>
+```
+
+# Missing Features
+
+Webby is intended to be very simple, and will never attempt to implement the full set of features
+available in modern-day web browsers. However, there are a few features that would be very useful,
+and potentially worth adding:
+
+1. History, for remembering visited locations
+2. Back/Forward buttons
+3. Page refresh
+4. `src` attributes for scripts and styles
+5. GTK version header (sent by Webby on every request indicating the version of GTK it was built
+   with, so that servers can react accordingly)
+6. Basic authentication
+
+# Final Thoughts
+
+This entire exercise stems from my enjoyment of GTK programming, coupled with my frustration at
+shoehorning the web into everything as the One True Platform.
+
+The web's success is not unwarranted, since it is a truly innovative, powerful, and perhaps most
+importantly, open platform. However, it is not without its faults. One of the biggest problems with
+the web is the sheer size and complexity of its browsers.
+[Chromium](https://www.openhub.net/p/chrome/analyses/latest/languages_summary) and
+[Firefox](https://www.openhub.net/p/firefox/analyses/latest/languages_summary) both contain over 25
+million lines of code; for comparison,
+[GTK](https://www.openhub.net/p/gtk/analyses/latest/languages_summary) is under 900k. This
+complexity coupled with the web's popularity means that it is a real security concern for sensitive
+applications.
+
+Or, for a less serious reason to avoid defaulting to the web for everything: it's more fun to use
+something besides HTML and JavaScript. 🤷
+
+While the solution I outline here may not be for everyone, I think there is some real value in
+bringing some of the web's lessons to other platforms.
+
+If you made it this far, thanks for reading!
 
 <!-- vim: set tw=100: -->
