@@ -22,7 +22,7 @@ only run on the client.
 In this post, I want to demonstrate a technique for building GTK applications like they were
 websites, using the client-server deployment model.
 
-_For reference, full source code for the prototype and a number of examples can be seen at
+_For reference, full source code for the prototype, along with examples, can be seen at
 https://git.sr.ht/~damien/gtk-webby_
 
 {{< figure src="https://imgs.xkcd.com/comics/installing.png" class="regular" >}}
@@ -51,12 +51,11 @@ the task is mostly one of gluing together existing components, rather than build
 ## So you're basically building a new browser?
 
 Kind of. The goal is to have users download a single application that behaves similarly to
-browsers, but one that instead renders native GTK applications.
+browsers, but one that instead renders native GTK interfaces rather than HTML.
 
 (It is worth noting that GTK does support [broadway](https://docs.gtk.org/gtk4/broadway.html), which
-allows you to access a running application remotely through your browser, but that has several
-downsides: no automatic session management, reliance on websockets, and still requires the use of an
-existing web browser. Plus my way is more fun)
+allows you to access a running application remotely through your browser, so depending on your needs
+it may also be worth checking out, but in this post I'm going for something more native)
 
 So, that's the goal. In order to get there, we need to break it down into (some of) the individual
 features provided by your average web browser:
