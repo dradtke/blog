@@ -23,8 +23,8 @@ the client.
 In this post, I want to demonstrate a technique for building GTK applications like they were
 websites, using the client-server deployment model.
 
-_Full source code for the prototype, along with examples, can be seen at
-https://github.com/dradtke/gtk-webby_
+(Full source code for the prototype, along with examples, can be seen at
+https://github.com/dradtke/gtk-webby)
 
 ## ...but why?
 
