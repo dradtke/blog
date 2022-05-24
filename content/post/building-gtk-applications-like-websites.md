@@ -1,8 +1,9 @@
 +++
-date = "2022-05-18"
+date = "2022-05-24"
 title = "Building GTK4 Applications Like Websites"
-draft = true
 +++
+
+{{< figure src="https://imgs.xkcd.com/comics/installing.png" class="regular" >}}
 
 The modern web, broadly, consists of two distinct innovations:
 
@@ -13,19 +14,17 @@ The modern web, broadly, consists of two distinct innovations:
 
 Whether you love it or hate it, web rendering and interaction technology is widely used, both on the
 web and off. Electron and React Native take the web technology stack and deploy it to your desktop
-or phone, respectively, as a standalone application.
+or phone, respectively, as a standalone application that don't require a (separate) browser.
 
 By contrast, the client-server deployment model is not widely used outside of the web in which it
-originated. Desktop application stacks, such as GTK (which is the focus of this post), traditionally
-only run on the client.
+originated. Desktop application stacks, such as GTK (which is the focus of this post), only run on
+the client.
 
 In this post, I want to demonstrate a technique for building GTK applications like they were
 websites, using the client-server deployment model.
 
-_For reference, full source code for the prototype, along with examples, can be seen at
-https://git.sr.ht/~damien/gtk-webby_
-
-{{< figure src="https://imgs.xkcd.com/comics/installing.png" class="regular" >}}
+_Full source code for the prototype, along with examples, can be seen at
+https://github.com/dradtke/gtk-webby_
 
 ## ...but why?
 
@@ -54,8 +53,8 @@ Kind of. The goal is to have users download a single application that behaves si
 browsers, but one that instead renders native GTK interfaces rather than HTML.
 
 (It is worth noting that GTK does support [broadway](https://docs.gtk.org/gtk4/broadway.html), which
-allows you to access a running application remotely through your browser, so depending on your needs
-it may also be worth checking out, but in this post I'm going for something more native)
+allows you to access a running application remotely through your browser, but in this post I want to
+explore the possibility of building client-server applications with fully native GTK)
 
 So, that's the goal. In order to get there, we need to break it down into (some of) the individual
 features provided by your average web browser:
@@ -77,7 +76,7 @@ After that, I'll end on
 The most basic, fundamental feature we need is the ability to render an application. In order to do
 that, we first need a canvas:
 
-{{< figure src="/images/gtk-like-web/webby.png" class="regular" >}}
+{{< figure src="/images/building-gtk-applications-like-websites/webby.png" class="regular" >}}
 
 This is Webby, the current name of my proof-of-concept, built with [gtk-rs](https://gtk-rs.org/).
 
@@ -119,7 +118,7 @@ fn rocket() -> _ {
 
 With this running, we can now navigate to `http://localhost:8000/` and see what we get:
 
-{{< figure src="/images/gtk-like-web/webby-hello.png" class="regular" >}}
+{{< figure src="/images/building-gtk-applications-like-websites/webby-hello.png" class="regular" >}}
 
 In a nutshell, here is what's happening:
 
@@ -160,7 +159,8 @@ Now, the big caveat here is that the GTK UI interface format was not designed to
 or frankly to mimic the web. So in order to support scripting, we will need to "extend" the format
 to support what we need.
 
-To recap, here is how you would define client-side behavior for a regular web application:
+For reference, in order to run a script on a regular web page, you could put a tag like this in your
+HTML:
 
 ```html
 <script type="text/javascript">
@@ -214,7 +214,7 @@ Using this capability, here is how we might connect a signal handler to our butt
 
 Now when we click the button, we get this:
 
-{{< figure src="/images/gtk-like-web/alert.png" class="regular" >}}
+{{< figure src="/images/building-gtk-applications-like-websites/alert.png" class="regular" >}}
 
 Neat! In order to facilitate this, we need to initialize the Lua virtual machine with a few things:
 
@@ -290,7 +290,7 @@ This example introduces the `web:style` tag, which contains CSS code to apply to
 
 Here is the rendered result:
 
-{{< figure src="/images/gtk-like-web/styling.png" class="regular" >}}
+{{< figure src="/images/building-gtk-applications-like-websites/styling.png" class="regular" >}}
 
 For more information on the specific properties used here, see the CSS property
 [documentation](https://docs.gtk.org/gtk4/css-properties.html).
@@ -345,7 +345,8 @@ find_widget("password"):connect("activate", false, login)
 The `submit_form()` function takes three arguments:
 
 1. A method, in this case `POST`
-2. An action, in this case an empty string, which tells Webby to use the current location
+2. An action (or a URL to send the form request to), in this case an empty string, which tells
+   Webby to use the current location
 3. A table containing key-value form value pairs
 
 The form data will be encoded the same way a browser would do it, and the result submitted to the
@@ -357,13 +358,13 @@ While not strictly related to form processing, Webby's internal HTTP client supp
 work well with forms that need to save session data. Here are some screenshots from the included
 forms example:
 
-{{< figure src="/images/gtk-like-web/login-form-1.png" class="regular" >}}
+{{< figure src="/images/building-gtk-applications-like-websites/login-form-1.png" class="regular" >}}
 
 When this form is submitted, it will make a POST request to `http://localhost:8004/` with the
 entered username and password as form fields. After processing, the page will refresh, this time
 with cookie session information.
 
-{{< figure src="/images/gtk-like-web/login-form-2.png" class="regular" >}}
+{{< figure src="/images/building-gtk-applications-like-websites/login-form-2.png" class="regular" >}}
 
 # Page Title
 
@@ -387,9 +388,7 @@ and potentially worth adding:
 2. Back/Forward buttons
 3. Page refresh
 4. `src` attributes for scripts and styles
-5. GTK version header (sent by Webby on every request indicating the version of GTK it was built
-   with, so that servers can react accordingly)
-6. Basic authentication
+5. Basic authentication
 
 # Final Thoughts
 
