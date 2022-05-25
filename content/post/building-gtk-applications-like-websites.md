@@ -137,6 +137,13 @@ of basically arbitrary complexity. By using [Glade](https://glade.gnome.org/), y
 quickly build fairly complex interfaces, and anything contained within a `body` widget will be
 rendered by Webby.
 
+EDIT: Apparently Glade is [not
+recommended](https://blogs.gnome.org/christopherdavis/2020/11/19/glade-not-recommended/) and will
+likely not support GTK4. Its replacement is called
+[Cambalache](https://flathub.org/apps/details/ar.xjuan.Cambalache), though it is still experimental
+so your results may vary. A lot of GNOME developers appear to simply write Builder XML by hand,
+at least until the tooling in this space stabilizes.
+
 In order to really do something with this, we need to introduce some additional features.
 
 # Scripting
