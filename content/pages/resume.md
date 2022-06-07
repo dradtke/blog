@@ -21,6 +21,9 @@ _Location_
 _Projects_
 : [github.com/dradtke](https://github.com/dradtke) &mdash; [git.sr.ht/~damien](https://git.sr.ht/~damien)
 
+_Education_
+: BS in Math & Computer Science from DePaul University
+
 Career Experience
 -----------------
 
