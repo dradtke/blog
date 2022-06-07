@@ -64,7 +64,7 @@ _Personal_
 
 _Languages and Frameworks_
 
-- Proficient with Go, Rust, Java, JavaScript, Ruby, Python, Bash, HTML, CSS, Markdown
+- Proficient with Go, Rust, Java, JavaScript, Ruby, Python, Bash, C, HTML, CSS, Markdown, Vimscript
   - Some experience in Scala, Lua, Haskell, C#, Groovy, Clojure, Zig, Apex, PowerShell
 - Framework experience including Ruby on Rails, Spring Boot, Apache Airflow, and Apache Spark
 
