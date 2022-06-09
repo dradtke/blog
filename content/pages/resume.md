@@ -6,6 +6,8 @@ weight = 1
 Information
 -----------
 
+<div id="information">
+
 _Email_
 : [me@damienradtke.com](mailto:me@damienradtke.com)
 
@@ -18,11 +20,13 @@ _Phone_
 _Location_
 : Chicago, IL
 
-_Projects_
+_Repositories_
 : [github.com/dradtke](https://github.com/dradtke) &mdash; [git.sr.ht/~damien](https://git.sr.ht/~damien)
 
 _Education_
 : BS in Math & Computer Science from DePaul University
+
+</div>
 
 Career Experience
 -----------------
@@ -33,10 +37,10 @@ _April 2016 - present_
 - Current group tech lead for the Reporting Platform team
 - Develops new features and bug fixes across a number of different systems as a senior individual contributor 
 - Primary architect of our Report Builder application, and contributing architect of our reporting data warehouse
-- Meets with product managers to help define product requirements, provide estimates, and answer questions
-- Mentors other engineers on software development practices
+- Meets with product managers to help define product requirements, provide estimates & insights, and answer questions
+- Mentors and trains engineers on software development practices and internal systems
 - Provides production support for critical reporting systems
-- Constantly working to improve team efficiency by optimizing development practices
+- Constantly working to improve team efficiency by optimizing our tools and workflows
 
 _April 2015 - April 2016_
 :   | **CTO / Senior Developer @ Build This LLC**
@@ -44,7 +48,7 @@ _April 2015 - April 2016_
 - Lead development of a successful Spanish language learning site
 - Assisted with development and maintenance of web and Android apps
 - Mentored junior developers by providing assistance and advice on best practices
-- Met with clients to discover business requirements
+- Met with clients to discover business requirements and collaborate on solution design
 
 _February 2012 - April 2015_
 :   | **Software Engineer @ Channel IQ**
@@ -75,4 +79,4 @@ _Tools and Systems_
 - Microsoft Office (notably Word, Excel, Teams), G Suite, Slack, Miro, PowerPoint
 
 
-<div id="footnote">This resume [built](https://git.sr.ht/~damien/resume/tree) with Markdown, Pandoc, CSS, and Make. Also available [online](https://damienradtke.com/pages/resume)</div>
+<div id="footnote">This resume was [built](https://git.sr.ht/~damien/resume/tree) with Markdown, Pandoc, CSS, and Make. Also available [online](https://damienradtke.com/pages/resume)</div>
