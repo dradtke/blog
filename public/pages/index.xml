@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Pages on Version 7.0</title>
+    <link>https://damienradtke.com/pages/</link>
+    <description>Recent content in Pages on Version 7.0</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language><atom:link href="https://damienradtke.com/pages/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>About</title>
+      <link>https://damienradtke.com/pages/about/</link>
+      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      
+      <guid>https://damienradtke.com/pages/about/</guid>
+      <description>Welcome to my blog!
+I&amp;rsquo;m Damien, a software developer based in Chicago. This website is my place for occasionally writing blog posts, usually around programming. They&amp;rsquo;re not always interesting or useful, but hey, it&amp;rsquo;s about the journey, right?
+My programming interests lately include
+Go and Rust Networking infrastructure Desktop application development with GTK Because I like to think of myself as a well-rounded person, some of my non-programming interests include</description>
+    </item>
+    
+    <item>
+      <title>Resume</title>
+      <link>https://damienradtke.com/pages/resume/</link>
+      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      
+      <guid>https://damienradtke.com/pages/resume/</guid>
+      <description>Information Email me@damienradtke.com Website https://damienradtke.com Phone (651) 245-3382 Location Chicago, IL Repositories github.com/dradtke — git.sr.ht/~damien Education BS in Math &amp;amp; Computer Science from DePaul University Career Experience April 2016 - present | Software Engineer @ Braintree/PayPal Current group tech lead for the Reporting Platform team Develops new features and bug fixes across a number of different systems as a senior individual contributor Primary architect of our Report Builder application, and contributing architect of our reporting data warehouse Meets with product managers to help define product requirements, provide estimates &amp;amp; insights, and answer questions Mentors and trains engineers on software development practices and internal systems Provides production support for critical reporting systems Constantly working to improve team efficiency by optimizing our tools and workflows April 2015 - April 2016 | CTO / Senior Developer @ Build This LLC Lead development of a successful Spanish language learning site Assisted with development and maintenance of web and Android apps Mentored junior developers by providing assistance and advice on best practices Met with clients to discover business requirements and collaborate on solution design February 2012 - April 2015 | Software Engineer @ Channel IQ Maintained .</description>
+    </item>
+    
+  </channel>
+</rss>

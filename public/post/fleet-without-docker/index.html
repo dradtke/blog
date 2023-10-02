@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-us" lang="en-us">
+<head>
+  <link href="//gmpg.org/xfn/11" rel="profile">
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="generator" content="Hugo 0.115.1">
+
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Running Fleet Without Docker &middot; Version 7.0</title>
+
+  
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/print.css" media="print">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/poole.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/syntax.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/hyde.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Abril+Fatface|PT+Sans:400,400i,700">
+
+
+  
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="/apple-touch-icon-144-precomposed.png">
+  <link rel="shortcut icon" href="/favicon.png">
+
+  
+  
+</head>
+
+  <body class=" ">
+  <aside class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      <a href="https://damienradtke.com/"><h1>Version 7.0</h1></a>
+      <p class="lead">
+       Fixes many known issues with version 6.0 
+      </p>
+    </div>
+
+    <nav>
+      <ul class="sidebar-nav">
+        <li><a href="https://damienradtke.com/">Home</a> </li>
+        <li><a href="/pages/about"> About </a></li><li><a href="https://github.com/dradtke/"> Projects — Github </a></li><li><a href="https://git.sr.ht/~damien"> Projects — Sourcehut </a></li>
+      </ul>
+    </nav>
+
+    <p>&copy; 2023. All rights reserved. </p>
+  </div>
+</aside>
+
+    <main class="content container">
+    <div class="post">
+    <h1>Running Fleet Without Docker</h1>
+    
+      <time datetime=2016-11-11T13:15:33-0600 class="post-date">Fri, Nov 11, 2016</time>
+    
+
+    <h1 id="introduction">Introduction</h1>
+<p>The <a href="https://coreos.com/">CoreOS</a> project is doing some very interesting work on
+how to build, deploy, and scale web applications. Their big focus is to
+keep the platform as minimal as possible, which means that everything must be
+run as a container. That in turn means that the stock OS doesn&rsquo;t have to worry about
+any language runtimes or compilers, since those will be bundled with the app itself.</p>
+<p>This all sounds amazing on paper, but Docker isn&rsquo;t without its flaws, and
+the kind of orchestration that CoreOS recommends comes with its own
+complexities. However, the CoreOS team did develop one project that instantly
+caught my eye: <a href="https://github.com/coreos/fleet">fleet</a>. I recently became
+interested in the potential of systemd as a web application service manager, and
+fleet seemed like a natural extension into the world of clustering.</p>
+<h3 id="why-systemd">Why systemd?</h3>
+<p>Every web application should be using some kind of process manager. Their most
+important function is automatic restart on failure, but depending on which one you
+use, they can have other benefits as well. However, every runtime apparently
+feels the need to build their own, so you have your choice between
+<a href="http://supervisord.org/">Supervisor</a>, <a href="http://strong-pm.io/">StrongLoop</a>,
+<a href="http://godrb.com/">God</a>, <a href="https://circus.readthedocs.io/en/latest/">Circus</a>,
+<a href="http://smarden.org/runit/">Runit</a>, <a href="https://mmonit.com/monit/">Monit</a>, and
+probably a good number more. As a big fan and regular user of openSUSE, my main
+reason for picking systemd is that it&rsquo;s already installed and used to manage the
+operating system&rsquo;s own services, so why not treat your web application as
+just another service? The Ubuntu equivalent is Upstart, but then you have to use
+Ubuntu. =)</p>
+<h3 id="note">Note</h3>
+<p>The rest of this post assumes that you have some &ldquo;remote&rdquo; server to play with,
+and that it&rsquo;s running a recent version of openSUSE (though any systemd-based
+Linux distribution should work with minor changes). It
+could be a container, virtual machine, VPS instance, or even your own colocated
+hardware, but you should be able to SSH into it no problem, and have root access for
+installing packages and running services.</p>
+<h1 id="a-simple-application">A Simple Application</h1>
+<p>Let&rsquo;s build a very simple web application. The language doesn&rsquo;t really matter,
+but Go is nice for Docker-less development because it statically compiles into a
+single file, and can even be configured to include all static assets within the
+binary. The use-case for Docker becomes quite a bit stronger when using an
+interpreted language with a heavy runtime like Ruby or Python.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#75715e">// website.go
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">package</span> <span style="color:#a6e22e">main</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> (
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;log&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;net/http&#34;</span>
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">index</span>(<span style="color:#a6e22e">w</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">ResponseWriter</span>, <span style="color:#a6e22e">r</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">Request</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">Write</span>([]byte(<span style="color:#e6db74">&#34;Hello, World!&#34;</span>))
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">HandleFunc</span>(<span style="color:#e6db74">&#34;/&#34;</span>, <span style="color:#a6e22e">index</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">log</span>.<span style="color:#a6e22e">Print</span>(<span style="color:#e6db74">&#34; -- server is live --&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">ListenAndServe</span>(<span style="color:#e6db74">&#34;:8080&#34;</span>, <span style="color:#66d9ef">nil</span>); <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">log</span>.<span style="color:#a6e22e">Fatal</span>(<span style="color:#a6e22e">err</span>)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>Deployment will consist of compiling for Linux and <code>scp</code>&lsquo;ing to a predetermined
+location. You will need to ensure that your user has write permissions to
+<code>/srv/www</code> in order for this to work:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>$ env GOOS<span style="color:#f92672">=</span>linux go build -o website website.go
+</span></span><span style="display:flex;"><span>$ scp website &lt;user&gt;@&lt;host&gt;:/srv/www</span></span></code></pre></div>
+<h1 id="installing-fleet">Installing fleet</h1>
+<p>The <code>fleet</code> package isn&rsquo;t in the standard set of openSUSE repositories, so we&rsquo;ll
+have to add a new repository to install it (replace <code>openSUSE_Leap_42.1</code> with
+your version if necessary):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>$ sudo zypper ar obs://Virtualization:containers/openSUSE_Leap_42.1 containers
+</span></span><span style="display:flex;"><span>$ sudo zypper ref containers
+</span></span><span style="display:flex;"><span>$ sudo zypper in fleet etcd etcdctl</span></span></code></pre></div>
+<p>That last command actually installs three packages: fleet, etcd, and the
+command-line tool for interacting with etcd. etcd is a distributed key-value
+store, and it&rsquo;s the mechanism by which fleet communicates across hosts. The
+etcdctl package is optional, but nice to have for communicating directly with
+etcd if need be.</p>
+<p>Once those are installed, start up etcd:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>$ su -c <span style="color:#e6db74">&#39;service etcd start&#39;</span></span></span></code></pre></div>
+<p>This starts up a single-node etcd cluster listening on <code>http://localhost:2379</code>.
+The service can be configured by modifying values in <code>/etc/sysconfig/etcd</code>, but
+the default values will do fine for now.</p>
+<p>The next thing to do is start up fleet, but unfortunately, a small config change
+needs to be made. Open up <code>/etc/fleet/fleet.conf</code> and add the following line:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>etcd_servers=[&#34;http://localhost:2379&#34;]</span></span></code></pre></div>
+<p>Due to what appear to be historical reasons, fleet by default will attempt to
+connect to etcd at <code>http://localhost:4001</code>, but recent releases of etcd have
+begun defaulting to port 2379. Once that&rsquo;s added, start up fleet too:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>$ su -c <span style="color:#e6db74">&#39;service fleet start&#39;</span></span></span></code></pre></div>
+<p>Verify that they&rsquo;re both running with <code>su -c 'service &lt;service&gt; status'</code> before
+proceeding.</p>
+<h3 id="tip-install-fleetctl-locally">Tip: Install fleetctl Locally</h3>
+<p>Since the whole point of fleet is to act as a single point of entry for an
+application cluster, you&rsquo;ll probably want to install the <code>fleetctl</code> command line
+tool to your local computer. Fleet itself only supports Linux, but you can
+install fleetctl anywhere (albeit with some issues on
+<a href="https://github.com/coreos/fleet/issues/1043">Windows</a>).</p>
+<p>Managing a fleet locally with fleetctl requires it to be able to access machines
+via SSH publickey (password-based authentication won&rsquo;t work), so you&rsquo;ll need to
+add your local user&rsquo;s public SSH key to your remote user&rsquo;s <code>~/.ssh/authorized_keys</code>
+file.</p>
+<p>Once it&rsquo;s installed and your public key is configured, test your connection like
+so:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>$ fleetctl --tunnel<span style="color:#f92672">=</span>&lt;remote-ip&gt; --ssh-username<span style="color:#f92672">=</span>&lt;remote-username&gt; <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    --endpoint<span style="color:#f92672">=</span>http://localhost:2379 list-machines
+</span></span><span style="display:flex;"><span>MACHINE		IP		METADATA
+</span></span><span style="display:flex;"><span>17d98101...	74.122.197.234	-</span></span></code></pre></div>
+<p>The <code>--tunnel</code> option lets you run commands locally as if you were running them
+from <code>&lt;remote-ip&gt;</code>, <code>--ssh-username</code> specifies which user to SSH in as, and
+<code>--endpoint</code> specifies which etcd endpoint to connect to. Note that the
+endpoint is resolved relative to the remote host, not locally, and that it
+uses the exact same value we added to <code>fleet.conf</code> earlier.</p>
+<p>If all went well, your terminal should print out some information about your
+remote host, including a truncated machine id and IP address.</p>
+<h3 id="tip-alias-fleetctl">Tip: Alias fleetctl</h3>
+<p>Once you&rsquo;ve confirmed that <code>fleetctl</code> works with the options above, it&rsquo;s a good
+idea to create an alias so that you don&rsquo;t have to manually type the options
+every time. With this, writing <code>fleetctl list-machines</code> does the exact same
+thing as above:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>$ alias fleetctl<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;fleetctl --tunnel=&lt;remote-ip&gt; --ssh-username=&lt;remote-username&gt; --endpoint=http://localhost:2379&#39;</span></span></span></code></pre></div>
+<h1 id="create-a-unit-file">Create a Unit File</h1>
+<p>Getting fleet and etcd up and running, and being able to communicate with it,
+are the hard parts. Now all that&rsquo;s left is defining your application as a
+unit file and loading it up!</p>
+<p>CoreOS has a good
+<a href="https://coreos.com/docs/launching-containers/launching/getting-started-with-systemd/">introduction</a>
+to systemd and unit files, but for now we&rsquo;ll start with something very simple.
+Note that this file should be created locally; <code>fleetctl</code> will take care of
+uploading it to the server and making use of it.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span># website.service
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>[Unit]
+</span></span><span style="display:flex;"><span>Description=My Awesome Website!
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>[Service]
+</span></span><span style="display:flex;"><span>ExecStart=/srv/www/website</span></span></code></pre></div>
+<p>At its absolute simplest, this just sets a description and tells systemd how to
+start the service. There are a whole host of other options and configurations
+you can do, some of them fleet-specific, but this is enough to be able to get
+something running.</p>
+<h1 id="start-the-application">Start the Application</h1>
+<p>First, we need to tell fleet about our application:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>$ fleetctl submit website.service
+</span></span><span style="display:flex;"><span>Unit website.service inactive</span></span></code></pre></div>
+<p>You can then verify that it was accepted:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>$ fleetctl list-unit-files
+</span></span><span style="display:flex;"><span>UNIT			HASH	DSTATE		STATE		TARGET
+</span></span><span style="display:flex;"><span>website.service		6f60fd0	inactive	inactive	-</span></span></code></pre></div>
+<p>If your output looks like this, then you&rsquo;re good to start it up.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>$ fleetctl start website.service
+</span></span><span style="display:flex;"><span>Unit website.service launched on 17d98101.../74.122.197.234</span></span></code></pre></div>
+<p>And then verify that it&rsquo;s up and running&hellip;</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>$ fleetctl list-units
+</span></span><span style="display:flex;"><span>UNIT			MACHINE				ACTIVE	SUB
+</span></span><span style="display:flex;"><span>website.service		17d98101.../74.122.197.234	active	running
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>$ fleetctl status website.service
+</span></span><span style="display:flex;"><span>website.service - My Awesome Website!
+</span></span><span style="display:flex;"><span>   Loaded: loaded <span style="color:#f92672">(</span>/run/fleet/units/website.service; linked-runtime<span style="color:#f92672">)</span>
+</span></span><span style="display:flex;"><span>   Active: active <span style="color:#f92672">(</span>running<span style="color:#f92672">)</span> since Fri 2016-11-11 16:26:54 CST; 1min 13s ago
+</span></span><span style="display:flex;"><span> Main PID: <span style="color:#ae81ff">2260</span> <span style="color:#f92672">(</span>website<span style="color:#f92672">)</span>
+</span></span><span style="display:flex;"><span>   CGroup: /system.slice/website.service
+</span></span><span style="display:flex;"><span>           └─2260 /srv/www/website</span></span></code></pre></div>
+<p>And that&rsquo;s it!</p>
+<h1 id="taking-it-further">Taking it Further</h1>
+<p>Naturally, the next step would be to begin scaling the application out to
+multiple hosts and to begin introducing additional services, like a database.
+Scaling to multiple hosts is a discussion for another day, and mostly revolves
+around setting each one up with an etcd/fleet installation, and then configuring
+etcd correctly.</p>
+<p>Using fleet without containers means that additional services will need to
+be installed normally, but configured with fleet. One easy way to do this is to
+cheat a little bit by copying the installation&rsquo;s service file to your local
+project, which also lets you add some fleet-specific settings if necessary. As
+an example, here&rsquo;s how you would start Postgres running as part of your fleet
+cluster:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>$ scp &lt;user&gt;@&lt;host&gt;:/usr/lib/systemd/system/postgresql.service .
+</span></span><span style="display:flex;"><span>$ fleetctl start postgresql.service <span style="color:#75715e"># will submit the file on first run</span></span></span></code></pre></div>
+<h1 id="conclusion">Conclusion</h1>
+<p>Most use-cases for fleet will still involve Docker and CoreOS, but as you can
+see, it is entirely possible to install and use it independent of those tools,
+and doing so can provide you with a flexible scaling solution for those of you
+who don&rsquo;t want to commit to a kitchen-sink solution.</p>
+
+  </div>
+
+    </main>
+
+    
+  </body>
+</html>

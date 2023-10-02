@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-us" lang="en-us">
+<head>
+  <link href="//gmpg.org/xfn/11" rel="profile">
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="generator" content="Hugo 0.115.1">
+
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Deploying openSUSE on Vultr &middot; Version 7.0</title>
+
+  
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/print.css" media="print">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/poole.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/syntax.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/hyde.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Abril+Fatface|PT+Sans:400,400i,700">
+
+
+  
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="/apple-touch-icon-144-precomposed.png">
+  <link rel="shortcut icon" href="/favicon.png">
+
+  
+  
+</head>
+
+  <body class=" ">
+  <aside class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      <a href="https://damienradtke.com/"><h1>Version 7.0</h1></a>
+      <p class="lead">
+       Fixes many known issues with version 6.0 
+      </p>
+    </div>
+
+    <nav>
+      <ul class="sidebar-nav">
+        <li><a href="https://damienradtke.com/">Home</a> </li>
+        <li><a href="/pages/about"> About </a></li><li><a href="https://github.com/dradtke/"> Projects — Github </a></li><li><a href="https://git.sr.ht/~damien"> Projects — Sourcehut </a></li>
+      </ul>
+    </nav>
+
+    <p>&copy; 2023. All rights reserved. </p>
+  </div>
+</aside>
+
+    <main class="content container">
+    <div class="post">
+    <h1>Deploying openSUSE on Vultr</h1>
+    
+      <time datetime=2017-06-16T16:25:58-0700 class="post-date">Fri, Jun 16, 2017</time>
+    
+
+    <p>As an avid openSUSE user and fan, I wish more VPS providers supported openSUSE
+images. Linode and Amazon both do, and there&rsquo;s nothing wrong with them, but I
+recently learned about Vultr&rsquo;s <a href="https://www.vultr.com/features/uploadiso/">custom
+ISO</a> feature and decided to try to
+bring openSUSE to Vultr! Vultr provides guides for installing CoreOS and
+Gentoo, after all, so why not openSUSE?</p>
+<h1 id="step-one-create-a-vultr-account">Step One: Create a Vultr Account</h1>
+<p>This is pretty easy and self-explanatory, but in order to try this out, you&rsquo;ll
+need a <a href="https://www.vultr.com/">Vultr</a> account, and a payment method hooked up
+to the account for billing.  Once you&rsquo;ve completed that, move on to step two.</p>
+<h1 id="step-two-upload-desired-iso">Step Two: Upload desired ISO</h1>
+<p>UPDATE: I submitted a request to Vultr to include Leap in their ISO library, and
+they accepted it! You should now see it available in the ISO Library section,
+meaning you don&rsquo;t have to upload it manually! You are of course free to still do
+so if you like, but if the version in the Library matches your needs, then
+continue on to step three.</p>
+<p>The first thing you&rsquo;ll need to do with your account is to upload the openSUSE
+ISO to it. Go to <code>Servers -&gt; ISO</code> and click the &ldquo;Add ISO&rdquo; button. On the next
+page you&rsquo;ll need to provide a URL from where the file can be downloaded. For
+installing 64-bit openSUSE Leap 42.2, you can use this one, but any valid
+openSUSE ISO link will do:</p>
+<pre tabindex="0"><code>http://download.opensuse.org/distribution/leap/42.2/iso/openSUSE-Leap-42.2-NET-x86_64.iso
+</code></pre><p>Then click Upload and wait a little bit for it to land in your account.</p>
+<h1 id="step-three-prepare-autoyast">Step Three: Prepare AutoYaST</h1>
+<p>openSUSE&rsquo;s solution to automated installations is
+<a href="https://doc.opensuse.org/projects/autoyast/">AutoYaST</a>, which allows you to
+kick off the installation with a predefined set of instructions describing what
+you want. These instructions are contained within a &ldquo;control file.&rdquo;</p>
+<h2 id="create-an-autoyast-control-file">Create an AutoYaST Control File</h2>
+<p>The <a href="https://doc.opensuse.org/projects/autoyast/#Profile">control file</a> is an
+XML file describing the desired installation. There are a <em>lot</em> of details that
+can go into a control file, but here&rsquo;s a simple one to get you started (based
+off of <a href="https://github.com/openSUSE/vagrant/blob/master/http/42.2-general.xml">this
+one</a>
+designed for use with Vagrant):
+<a href="/extras/opensuse-vultr/autoinst.xml">autoinst.xml</a></p>
+<p>Important note: Vultr mounts the instance&rsquo;s hard disk at <code>/dev/vda</code>, <em>not</em>
+<code>/dev/sda</code> like you would normally see. Make sure that the installation target
+is set correctly or the installation will fail.</p>
+<h2 id="make-the-control-file-available">Make the Control File Available</h2>
+<p>Once you have a control file, you&rsquo;ll have to make it available to the
+installation process. There are two ways to do this:</p>
+<ol>
+<li>Use the same server and load the control file locally</li>
+<li>Use a different server and load the control file over HTTP</li>
+</ol>
+<p>The first option only works if you&rsquo;re installing from a Live CD (full
+disclosure: I have not actually tried that approach, so it may not work at all,
+but it seems like something that would).  If you&rsquo;re using an ISO from the front
+page of <a href="https://software.opensuse.org">https://software.opensuse.org</a>, however, there is no live session to boot
+into, so we&rsquo;ll go with the second option.</p>
+<p>UPDATE: Since writing this post, a commenter on Reddit pointed out that you can
+use a public pasting service such as Pastebin to host the control file, which is
+quite a bit easier than the following advice that I originally recommended. If
+you follow that approach, make sure you use the <em>raw</em> URL, and feel free to skip
+the next section and go straight to step four!</p>
+<h3 id="create-an-intermediate-server">Create an Intermediate Server</h3>
+<p>In order to serve the control file from another location, we&rsquo;ll first have to
+create the other location. This server will be short-lived and can be destroyed
+after the openSUSE installation has kicked off. For the rest of this post, I&rsquo;m
+going to assume a control file name of <code>autoinst.xml</code>.</p>
+<p>Once you&rsquo;ve created it, upload it to the server:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>$ scp autoinst.xml root@&lt;ip address&gt;:~
+</span></span></code></pre></div><p>The last step is to begin serving it over HTTP. The simplest way is to use
+something like <a href="https://github.com/cortesi/devd">devd</a>, which can be installed
+easily:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span><span style="color:#75715e"># Run from the server as root</span>
+</span></span><span style="display:flex;"><span>$ curl -L https://github.com/cortesi/devd/releases/download/v0.7/devd-0.7-linux64.tgz <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  | tar xz --directory<span style="color:#f92672">=</span>/usr/local/bin --strip-components<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span> devd-0.7-linux64/devd
+</span></span></code></pre></div><p>Now make sure that any firewall is disabled (<code>systemctl stop firewalld</code> on
+CentOS 7) and begin serving requests in the local directory:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span><span style="color:#75715e"># Run from the server as root, in the same folder as autoinst.xml</span>
+</span></span><span style="display:flex;"><span>$ devd --address<span style="color:#f92672">=</span>0.0.0.0 .
+</span></span></code></pre></div><h1 id="step-four-install">Step Four: Install!</h1>
+<p>Now comes the magic. Boot up a new server using the openSUSE ISO, and use
+Vultr&rsquo;s &ldquo;View Console&rdquo; feature to see the server&rsquo;s output over VNC. Once you see
+the Grub screen with &ldquo;Installation&rdquo;, etc., press Escape, then Enter, then enter
+the following boot command:</p>
+<pre tabindex="0"><code>linux nomodeset autoyast=http://&lt;ip address&gt;/autoinst.xml
+</code></pre><p>Note that the IP address in the <code>autoyast</code> parameter should be the IP of the
+server hosting <code>autoinst.xml</code>.</p>
+<p>Now go make yourself a cup of coffee or something while the installation runs;
+it will take a little while.</p>
+<p>As soon as the installation is complete, you should be able to access the server
+via SSH with username <code>root</code> and password <code>password</code> (more secure options can,
+and should, be set by modifying the AutoYaST control file).</p>
+<p>And that&rsquo;s it! Enjoy your new Vultr openSUSE instance.</p>
+  </div>
+
+    </main>
+
+    
+  </body>
+</html>

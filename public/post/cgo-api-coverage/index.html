@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-us" lang="en-us">
+<head>
+  <link href="//gmpg.org/xfn/11" rel="profile">
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="generator" content="Hugo 0.115.1">
+
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Measuring C API Coverage with Go &middot; Version 7.0</title>
+
+  
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/print.css" media="print">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/poole.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/syntax.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/hyde.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Abril+Fatface|PT+Sans:400,400i,700">
+
+
+  
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="/apple-touch-icon-144-precomposed.png">
+  <link rel="shortcut icon" href="/favicon.png">
+
+  
+  
+</head>
+
+  <body class=" ">
+  <aside class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      <a href="https://damienradtke.com/"><h1>Version 7.0</h1></a>
+      <p class="lead">
+       Fixes many known issues with version 6.0 
+      </p>
+    </div>
+
+    <nav>
+      <ul class="sidebar-nav">
+        <li><a href="https://damienradtke.com/">Home</a> </li>
+        <li><a href="/pages/about"> About </a></li><li><a href="https://github.com/dradtke/"> Projects — Github </a></li><li><a href="https://git.sr.ht/~damien"> Projects — Sourcehut </a></li>
+      </ul>
+    </nav>
+
+    <p>&copy; 2023. All rights reserved. </p>
+  </div>
+</aside>
+
+    <main class="content container">
+    <div class="post">
+    <h1>Measuring C API Coverage with Go</h1>
+    
+      <time datetime=2013-12-03T00:00:00Z class="post-date">Tue, Dec 3, 2013</time>
+    
+
+    <p>About a year ago I started working on an initial batch of Go bindings to the Allegro 5 game library, and while I like the idea of producing a fully-functional foreign-interface library, I didn&rsquo;t finish during the initial period of development, and the project lay dormant for months. Recently I began to revive it, but as soon as I did, I ran into a problem: how much had I already done? Which API calls still needed to be covered?</p>
+<p>This blog post is about my solution to this question, which I implemented as a Go unit test. Go provides a unit testing framework with the standard library and tools, so it seemed like a natural fit for the problem of creating a Go program designed to report errors; in this case, each Allegro function that had not yet been implemented would be an error.</p>
+<p>The process has a few fundamental steps:</p>
+<ol>
+<li>Read the source of all files in the package and store it in memory.</li>
+<li>Parse the C headers for a list of all function names that we need to implement.</li>
+<li>For each function name, if it doesn&rsquo;t appear in the package source, report it as an error.</li>
+</ol>
+<p>This is essentially akin to grepping over the package source. More intelligent solutions may be possible using Go&rsquo;s standard AST-parsing library, but this approach worked fine for my use case, and took a lot less time to develop.</p>
+<p>Since the first and third steps are the shortest and easiest, I&rsquo;ll cover those first, and then dive into the hardest part, which is parsing the header files.</p>
+<h2 id="reading-the-package-source">Reading the Package Source</h2>
+<p>Reading in the package source and storing it in memory is pretty easy; simply pass in the package source directory to this function:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">getSource</span>(<span style="color:#a6e22e">packageRoot</span> <span style="color:#66d9ef">string</span>) ([]<span style="color:#66d9ef">byte</span>, <span style="color:#66d9ef">error</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">var</span> <span style="color:#a6e22e">buf</span> <span style="color:#a6e22e">bytes</span>.<span style="color:#a6e22e">Buffer</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">filepath</span>.<span style="color:#a6e22e">Walk</span>(<span style="color:#a6e22e">packageRoot</span>, <span style="color:#66d9ef">func</span>(<span style="color:#a6e22e">path</span> <span style="color:#66d9ef">string</span>, <span style="color:#a6e22e">info</span> <span style="color:#a6e22e">os</span>.<span style="color:#a6e22e">FileInfo</span>, <span style="color:#a6e22e">err</span> <span style="color:#66d9ef">error</span>) <span style="color:#66d9ef">error</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">info</span>.<span style="color:#a6e22e">IsDir</span>() <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">path</span> <span style="color:#f92672">!=</span> <span style="color:#a6e22e">packageRoot</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">filepath</span>.<span style="color:#a6e22e">SkipDir</span>
+</span></span><span style="display:flex;"><span>        } <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> !<span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">HasSuffix</span>(<span style="color:#a6e22e">info</span>.<span style="color:#a6e22e">Name</span>(), <span style="color:#e6db74">&#34;.go&#34;</span>) {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">data</span>, <span style="color:#a6e22e">err2</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">ioutil</span>.<span style="color:#a6e22e">ReadFile</span>(<span style="color:#a6e22e">path</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err2</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">err2</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">buf</span>.<span style="color:#a6e22e">Write</span>(<span style="color:#a6e22e">data</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>    })
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        panic(<span style="color:#a6e22e">err</span>)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">buf</span>.<span style="color:#a6e22e">Bytes</span>(), <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>Using Go&rsquo;s <code>filepath.Walk()</code> function makes this task an <em>ahem</em> walk in the park. The function starts by initializing a new <code>bytes.Buffer</code> instance, then uses <code>Walk()</code> to take care of iterating through each of its files. Because I kept all of the function calls within one package and used sub-packages for various modules, I wanted to make sure that subdirectories were skipped, which is the first thing that it checks for. The only other check is to ignore files not ending in <code>.go</code>, which aren&rsquo;t part of the source code. Assuming both of those tests pass, then the file is read in to memory and written to the buffer. Assuming all goes well, <code>Walk()</code> will exit with no error, and the buffer&rsquo;s current value is returned.</p>
+<p>Well, that was easy.</p>
+<h2 id="checking-if-a-function-appears-in-the-source">Checking if a Function Appears in the Source</h2>
+<p>This part is even easier:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> !<span style="color:#a6e22e">bytes</span>.<span style="color:#a6e22e">Contains</span>(<span style="color:#a6e22e">source</span>, []byte(<span style="color:#e6db74">&#34;C.&#34;</span><span style="color:#f92672">+</span><span style="color:#a6e22e">name</span>)) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// function is missing
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}</span></span></code></pre></div>
+<p>where <code>source</code> is the source code as returned by <code>getSource()</code> and <code>name</code> is a string representing the name of the C function. <code>&quot;C.&quot;</code> is prepended to it because that&rsquo;s how C functions are called from Go. If <code>bytes.Contains()</code> returns false here, then the call was not implemented.</p>
+<p>That was even easier. Where&rsquo;s the catch?</p>
+<h2 id="scanning-the-c-headers">Scanning the C Headers</h2>
+<p>Here&rsquo;s where the tricky part is, but Allegro actually makes this surprisingly easy too. For reasons that I can only assume have to do with making them easier to parse by external tools, Allegro&rsquo;s function declarations use the C preprocessor to take this form:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#a6e22e">AL_FUNC</span>(<span style="color:#f92672">&lt;</span>type<span style="color:#f92672">&gt;</span>, <span style="color:#f92672">&lt;</span>name<span style="color:#f92672">&gt;</span>, <span style="color:#f92672">&lt;</span>params<span style="color:#f92672">&gt;</span>);</span></span></code></pre></div>
+<p>At its simplest, parsing these is just a matter of using a regex like <code>AL_FUNC\((?P&lt;type&gt;.*), (?P&lt;name&gt;.*), \((?P&lt;params&gt;.*)\)\);</code> (<code>AL_FUNC</code> is replaced by different names for module headers, but everything else is the same), testing each line to see if it matches. If it does, extract the name and add it to the list of functions to check. If not, skip it.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#75715e">// Walk the header root (e.g. &#34;/usr/include/allegro5&#34;), collecting the source for each header.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// Note that the &#34;internal&#34; directory and non-header files are skipped.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">filepath</span>.<span style="color:#a6e22e">Walk</span>(<span style="color:#a6e22e">headerRoot</span>, <span style="color:#66d9ef">func</span>(<span style="color:#a6e22e">header</span> <span style="color:#66d9ef">string</span>, <span style="color:#a6e22e">info</span> <span style="color:#a6e22e">os</span>.<span style="color:#a6e22e">FileInfo</span>, <span style="color:#a6e22e">err</span> <span style="color:#66d9ef">error</span>) <span style="color:#66d9ef">error</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">info</span>.<span style="color:#a6e22e">IsDir</span>() <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">info</span>.<span style="color:#a6e22e">Name</span>() <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;internal&#34;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">filepath</span>.<span style="color:#a6e22e">SkipDir</span>
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">info</span>.<span style="color:#a6e22e">IsDir</span>() <span style="color:#f92672">||</span> !<span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">HasSuffix</span>(<span style="color:#a6e22e">info</span>.<span style="color:#a6e22e">Name</span>(), <span style="color:#e6db74">&#34;.h&#34;</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">data</span>, <span style="color:#a6e22e">err2</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">ioutil</span>.<span style="color:#a6e22e">ReadFile</span>(<span style="color:#a6e22e">header</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err2</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// report the error
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// find missing functions in data
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>})</span></span></code></pre></div>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#75715e">// Loop through all of the lines in a header, reporting functions that don&#39;t appear in source.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#a6e22e">regex</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">regexp</span>.<span style="color:#a6e22e">MustCompile</span>(<span style="color:#e6db74">`AL_FUNC\((?P&lt;type&gt;.*), (?P&lt;name&gt;.*), \((?P&lt;params&gt;.*)\)\);`</span>)
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">line</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">Split</span>(string(<span style="color:#a6e22e">data</span>), <span style="color:#e6db74">&#34;\n&#34;</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">line</span> = <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">TrimSpace</span>(<span style="color:#a6e22e">line</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">vals</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">regex</span>.<span style="color:#a6e22e">FindStringSubmatch</span>(<span style="color:#a6e22e">line</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">vals</span> <span style="color:#f92672">==</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// no match
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">continue</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">name</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">TrimSpace</span>(<span style="color:#a6e22e">vals</span>[<span style="color:#ae81ff">2</span>])
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">HasPrefix</span>(<span style="color:#a6e22e">name</span>, <span style="color:#e6db74">&#34;_&#34;</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// function names starting with an underscore are private to Allegro
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">continue</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> !<span style="color:#a6e22e">bytes</span>.<span style="color:#a6e22e">Contains</span>(<span style="color:#a6e22e">source</span>, []byte(<span style="color:#e6db74">&#34;C.&#34;</span><span style="color:#f92672">+</span><span style="color:#a6e22e">name</span>)) {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// report missing function
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>At the surface, this appears to be not much harder than the other steps, minus the difficulty of getting the regular expression correct. However, there&rsquo;s a catch: what happens if the function declaration spans multiple lines? There are several in the Allegro headers that do just that. Since this approach splits the string by line, it won&rsquo;t work, since the regex will fail when it only matches part of the line.</p>
+<p>I&rsquo;m no regex wizard, so there may still be a simpler way to do this using a more complicated regex, but my solution was to create a custom iterator using a channel, one that will concatenate all of the lines between the beginning and the end of a declaration. The approach essentially replaces the string with a channel, which is fed by a function in a separate goroutine that will loop through the string and send across &ldquo;lines&rdquo; of strings, taking care to make sure that all declarations fit onto a single line.</p>
+<p>Here&rsquo;s the basics of what&rsquo;s going on:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#a6e22e">ch</span> <span style="color:#f92672">:=</span> make(<span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">string</span>)
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">var</span> <span style="color:#a6e22e">buf</span> <span style="color:#a6e22e">bytes</span>.<span style="color:#a6e22e">Buffer</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">lines</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">Split</span>(string(<span style="color:#a6e22e">data</span>), <span style="color:#e6db74">&#34;\n&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">i</span> &lt; len(<span style="color:#a6e22e">lines</span>); <span style="color:#a6e22e">i</span><span style="color:#f92672">++</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">line</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">TrimSpace</span>(<span style="color:#a6e22e">lines</span>[<span style="color:#a6e22e">i</span>])
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">buf</span>.<span style="color:#a6e22e">WriteString</span>(<span style="color:#a6e22e">line</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">HasPrefix</span>(<span style="color:#a6e22e">line</span>, <span style="color:#e6db74">&#34;AL_FUNC&#34;</span>) {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">for</span> !<span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">HasSuffix</span>(<span style="color:#a6e22e">line</span>, <span style="color:#e6db74">&#34;;&#34;</span>) {
+</span></span><span style="display:flex;"><span>                <span style="color:#a6e22e">i</span><span style="color:#f92672">++</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#a6e22e">line</span> = <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">TrimSpace</span>(<span style="color:#a6e22e">lines</span>[<span style="color:#a6e22e">i</span>])
+</span></span><span style="display:flex;"><span>                <span style="color:#a6e22e">buf</span>.<span style="color:#a6e22e">WriteString</span>(<span style="color:#a6e22e">line</span>)
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">ch</span> <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">buf</span>.<span style="color:#a6e22e">String</span>()
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">buf</span>.<span style="color:#a6e22e">Reset</span>()
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    close(<span style="color:#a6e22e">ch</span>)
+</span></span><span style="display:flex;"><span>}()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">regex</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">regexp</span>.<span style="color:#a6e22e">MustCompile</span>(<span style="color:#e6db74">`AL_FUNC\((?P&lt;type&gt;.*), (?P&lt;name&gt;.*), \((?P&lt;params&gt;.*)\)\);`</span>)
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> <span style="color:#a6e22e">line</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">ch</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">vals</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">regex</span>.<span style="color:#a6e22e">FindStringSubmatch</span>(<span style="color:#a6e22e">line</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}</span></span></code></pre></div>
+<p>Notice how the for loop inside the goroutine checks to see if each line starts with <code>AL_FUNC</code>, and if it does, continues adding lines to the buffer until one ends with a semicolon, signaling the end of the declaration. Now we can safely loop through the channel and be assured that any <code>AL_FUNC</code> declarations will include the whole declaration.</p>
+<h2 id="thats-a-wrap">That&rsquo;s a Wrap</h2>
+<p>The actual code in the final unit test is designed to take modules into account as well, and is therefore a little more complicated, but it follows the same basic principles. For the full source code, look at <code>coverage_test.go</code> in the root of the GitHub <a href="https://github.com/dradtke/go-allegro">repository</a>.</p>
+
+  </div>
+
+    </main>
+
+    
+  </body>
+</html>

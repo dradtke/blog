@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-us" lang="en-us">
+<head>
+  <link href="//gmpg.org/xfn/11" rel="profile">
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="generator" content="Hugo 0.115.1">
+
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Beer and Concurrent HTTP Pipelines &middot; Version 7.0</title>
+
+  
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/print.css" media="print">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/poole.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/syntax.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/hyde.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Abril+Fatface|PT+Sans:400,400i,700">
+
+
+  
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="/apple-touch-icon-144-precomposed.png">
+  <link rel="shortcut icon" href="/favicon.png">
+
+  
+  
+</head>
+
+  <body class=" ">
+  <aside class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      <a href="https://damienradtke.com/"><h1>Version 7.0</h1></a>
+      <p class="lead">
+       Fixes many known issues with version 6.0 
+      </p>
+    </div>
+
+    <nav>
+      <ul class="sidebar-nav">
+        <li><a href="https://damienradtke.com/">Home</a> </li>
+        <li><a href="/pages/about"> About </a></li><li><a href="https://github.com/dradtke/"> Projects — Github </a></li><li><a href="https://git.sr.ht/~damien"> Projects — Sourcehut </a></li>
+      </ul>
+    </nav>
+
+    <p>&copy; 2023. All rights reserved. </p>
+  </div>
+</aside>
+
+    <main class="content container">
+    <div class="post">
+    <h1>Beer and Concurrent HTTP Pipelines</h1>
+    
+      <time datetime=2016-10-28T13:34:04-0500 class="post-date">Fri, Oct 28, 2016</time>
+    
+
+    <p>This post is going to be a variation of the famous <a href="https://blog.golang.org/pipelines">pipelines and
+cancellation</a> Go blog post, modified for
+crawling a website, and updated using <code>net/http</code>&rsquo;s native support for request
+contexts introduced in Go 1.7.</p>
+<h1 id="downloading-beer-recipes">Downloading Beer Recipes</h1>
+<p>My motivation for building a concurrent website crawler was to be able to
+download a catalog of all public recipes on
+<a href="https://www.brewtoad.com/">Brewtoad</a>. Each recipe can be individually exported
+as XML, but from what I could tell there was no API to be able to download them
+all. So, I got to crawlin'.</p>
+<p>(Apologies in advance to the Brewtoad team for the harm I may have done to your
+server by writing this post. Internet, please be gentle. &lt;3)</p>
+<h1 id="one-at-a-time">One at a Time</h1>
+<p>Recipes can be viewed by visiting the URL
+<code>https://www.brewtoad.com/recipes?page=X&amp;sort=rank</code>, where <code>X</code> is a page number
+beginning at 1. Each page contains a series of links to specific recipes, and
+the XML for that recipe can be downloaded by simply adding <code>.xml</code> to the end of
+the URL. A simple first-pass, non-concurrent algorithm would then look like
+this:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">for</span> <span style="color:#a6e22e">page</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">1</span>; ; <span style="color:#a6e22e">page</span><span style="color:#f92672">++</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">resp</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">Get</span>(<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Sprintf</span>(
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;https://www.brewtoad.com/recipes?page=%d&amp;sort=rank&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">page</span>,
+</span></span><span style="display:flex;"><span>    ))
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        panic(<span style="color:#a6e22e">err</span>)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// This line uses the `golang.org/x/net/html` package.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#a6e22e">doc</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">html</span>.<span style="color:#a6e22e">Parse</span>(<span style="color:#a6e22e">resp</span>.<span style="color:#a6e22e">Body</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">resp</span>.<span style="color:#a6e22e">Body</span>.<span style="color:#a6e22e">Close</span>()
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        panic(<span style="color:#a6e22e">err</span>)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// getRecipeLinks() implementation elided, but it walks the page,
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// extracts beer recipe links, and returns them as a slice.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">recipeLink</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">getRecipeLinks</span>(<span style="color:#a6e22e">doc</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">beerXml</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">Get</span>(
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;https://www.brewtoad.com&#34;</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">recipeLink</span> <span style="color:#f92672">+</span> <span style="color:#e6db74">&#34;.xml&#34;</span>,
+</span></span><span style="display:flex;"><span>        )
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>            panic(<span style="color:#a6e22e">err</span>)
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Beer recipe XML acquired!
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>Since the majority of time spent running this code is waiting for the network
+request to finish, it makes sense that concurrently executing multiple requests
+at once would speed the whole process up.</p>
+<h1 id="concurrency-take-one">Concurrency: Take One</h1>
+<p>The natural way to concurrify this code is to kick off a new goroutine within
+each iteration of the loop:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">1</span>; ; <span style="color:#a6e22e">i</span><span style="color:#f92672">++</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>(<span style="color:#a6e22e">page</span> <span style="color:#66d9ef">int</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">resp</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">Get</span>(<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Sprintf</span>(
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;https://www.brewtoad.com/recipes?page=%d&amp;sort=rank&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">page</span>,
+</span></span><span style="display:flex;"><span>        ))
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>            panic(<span style="color:#a6e22e">err</span>)
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">doc</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">html</span>.<span style="color:#a6e22e">Parse</span>(<span style="color:#a6e22e">resp</span>.<span style="color:#a6e22e">Body</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">resp</span>.<span style="color:#a6e22e">Body</span>.<span style="color:#a6e22e">Close</span>()
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>            panic(<span style="color:#a6e22e">err</span>)
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">recipeLink</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">getRecipeLinks</span>(<span style="color:#a6e22e">doc</span>) {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>(<span style="color:#a6e22e">recipeLink</span> <span style="color:#66d9ef">string</span>) {
+</span></span><span style="display:flex;"><span>                <span style="color:#a6e22e">beerXml</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">Get</span>(
+</span></span><span style="display:flex;"><span>                    <span style="color:#e6db74">&#34;https://www.brewtoad.com&#34;</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">recipeLink</span> <span style="color:#f92672">+</span> <span style="color:#e6db74">&#34;.xml&#34;</span>,
+</span></span><span style="display:flex;"><span>                )
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>                    panic(<span style="color:#a6e22e">err</span>)
+</span></span><span style="display:flex;"><span>                }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e">// Beer recipe XML acquired!
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            }(<span style="color:#a6e22e">recipeLink</span>)
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }(<span style="color:#a6e22e">i</span>)
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>You could then use a channel to collect all of your downloaded recipes into a
+central location.</p>
+<p>There&rsquo;s one problem with this approach, though:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Get https://www.brewtoad.com/recipes?page=7136&amp;sort=rank: dial tcp 192.237.224.29:443: socket: too many open files</span></span></code></pre></div>
+<p>or</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Get https://www.brewtoad.com/recipes?page=8120&amp;sort=rank: dial tcp: lookup www.brewtoad.com: no such host</span></span></code></pre></div>
+<p>Exactly what error you get when you run that code may vary, but no computer
+likes having thousands of HTTP requests sent off together in the blink of an
+eye. While writing this post, I let that program run for a little bit too long,
+and my computer&rsquo;s fan kicked into high gear. I wasn&rsquo;t able to get it back to
+reasonable levels without <code>kill -9</code>.</p>
+<p>This kind of &ldquo;kick off a new goroutine for each computation you need, then wait
+on the results&rdquo; approach is fine for some workloads, but sending that many
+concurrent HTTP requests is not one of them. So, a more nuanced approach is needed.</p>
+<h1 id="concurrency-take-two">Concurrency: Take Two</h1>
+<p>The natural way around this is to limit the number of goroutines that are active
+at a time. This type of pattern is very common, and thanks to <code>sync.WaitGroup</code>,
+very easy to implement:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">const</span> <span style="color:#a6e22e">numGoroutines</span> = <span style="color:#ae81ff">50</span> <span style="color:#75715e">// can adjust based on your hardware
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">var</span> <span style="color:#a6e22e">wg</span> <span style="color:#a6e22e">sync</span>.<span style="color:#a6e22e">WaitGroup</span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">wg</span>.<span style="color:#a6e22e">Add</span>(<span style="color:#a6e22e">numGoroutines</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">i</span> &lt; <span style="color:#a6e22e">numGoroutines</span>; <span style="color:#a6e22e">i</span><span style="color:#f92672">++</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">go</span> <span style="color:#a6e22e">doSomething</span>()
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">wg</span>.<span style="color:#a6e22e">Wait</span>()</span></span></code></pre></div>
+<p>The next question then becomes the implementation of that <code>doSomething()</code>
+function. Your goroutines will each need to download more than one page, and
+they&rsquo;ll need some way of figuring out who should download which page.</p>
+<p>One way to distribute the work is to &ldquo;fan-out&rdquo; by deciding which pages you
+want to download, and then using a shared channel to send that input to
+whichever goroutine gets it first:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#a6e22e">pc</span> <span style="color:#f92672">:=</span> make(<span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">int</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Fill the input channel with the numbers 1-100 inclusive.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">1</span>; <span style="color:#a6e22e">i</span> <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">100</span>; <span style="color:#a6e22e">i</span><span style="color:#f92672">++</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">pc</span> <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">i</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    close(<span style="color:#a6e22e">pc</span>)
+</span></span><span style="display:flex;"><span>}()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">i</span> &lt; <span style="color:#a6e22e">numGoroutines</span>; <span style="color:#a6e22e">i</span><span style="color:#f92672">++</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// Grab the next page off the channel. The `ok` value
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#75715e">// will be false only if the channel has been closed,
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#75715e">// which means there is no more input to process.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#a6e22e">page</span>, <span style="color:#a6e22e">ok</span> <span style="color:#f92672">:=</span> <span style="color:#f92672">&lt;-</span><span style="color:#a6e22e">pc</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> !<span style="color:#a6e22e">ok</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// Download the page and collect its recipes.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// Each recipe download on this page should be done
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#75715e">// synchronously within this goroutine.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">wg</span>.<span style="color:#a6e22e">Done</span>()
+</span></span><span style="display:flex;"><span>    }()
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">wg</span>.<span style="color:#a6e22e">Wait</span>()</span></span></code></pre></div>
+<p>With this change, you can now safely queue up as many pages of recipes as you&rsquo;d
+like, but your computer will no longer hate you since there will be at most
+<code>numGoroutines</code> HTTP requests in flight at any given point in time.</p>
+<h1 id="adding-cancellation">Adding Cancellation</h1>
+<p>One nice improvement is the ability to cancel all in-flight network requests.
+This can be because you caught a SIGINT from the user, a certain amount of time
+has passed, or any other reason. With the release of Go 1.7, this is super
+easy to do since <code>http.Request</code> now supports native request-scoped contexts,
+which include the ability to cancel at a moment&rsquo;s notice.</p>
+<p>A simple cancellation context can be initialized like this:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#a6e22e">ctx</span>, <span style="color:#a6e22e">cancel</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">context</span>.<span style="color:#a6e22e">WithCancel</span>(<span style="color:#a6e22e">context</span>.<span style="color:#a6e22e">Background</span>())</span></span></code></pre></div>
+<p>The <code>ctx</code> context then needs to be included with each request you kick off, so
+the calls to <code>http.Get()</code> then become:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#a6e22e">req</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">NewRequest</span>(<span style="color:#e6db74">&#34;GET&#34;</span>, <span style="color:#a6e22e">url</span>, <span style="color:#66d9ef">nil</span>)
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// handle err
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">DefaultClient</span>.<span style="color:#a6e22e">Do</span>(<span style="color:#a6e22e">req</span>.<span style="color:#a6e22e">WithContext</span>(<span style="color:#a6e22e">ctx</span>))</span></span></code></pre></div>
+<h1 id="the-full-example">The Full Example</h1>
+<p>For those who want it, here&rsquo;s the full working code:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#f92672">package</span> <span style="color:#a6e22e">main</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> (
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;context&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;errors&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;fmt&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;io&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;io/ioutil&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;net/http&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;strconv&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;strings&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;sync&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;time&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;golang.org/x/net/html&#34;</span>
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Do an initial request to determine how many pages of recipes there are
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// available to download.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#a6e22e">pageCount</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">getRecipePageCount</span>()
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        panic(<span style="color:#a6e22e">err</span>)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Initialize the input (page count) channel and a cancelable request context.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">var</span> (
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">pc</span>          = make(<span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">int</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">ctx</span>, <span style="color:#a6e22e">cancel</span> = <span style="color:#a6e22e">context</span>.<span style="color:#a6e22e">WithCancel</span>(<span style="color:#a6e22e">context</span>.<span style="color:#a6e22e">Background</span>())
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Fill the input channel in a separate goroutine.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">1</span>; <span style="color:#a6e22e">i</span> <span style="color:#f92672">&lt;=</span> <span style="color:#a6e22e">pageCount</span>; <span style="color:#a6e22e">i</span><span style="color:#f92672">++</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">pc</span> <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">i</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        close(<span style="color:#a6e22e">pc</span>)
+</span></span><span style="display:flex;"><span>    }()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Kick off the job. This returns two channels; one for receiving downloaded
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// recipes, and one for receiving errors.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">const</span> <span style="color:#a6e22e">numGoroutines</span> = <span style="color:#ae81ff">50</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">rc</span>, <span style="color:#a6e22e">errc</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">downloadRecipes</span>(<span style="color:#a6e22e">numGoroutines</span>, <span style="color:#a6e22e">ctx</span>, <span style="color:#a6e22e">pc</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Demonstration of pipeline cancellation. After 30 seconds, every goroutine
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// will be told to drop what it&#39;s doing and exit.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>() {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&lt;-</span><span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">After</span>(<span style="color:#ae81ff">30</span> <span style="color:#f92672">*</span> <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Second</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Println</span>(<span style="color:#e6db74">&#34;Telling everyone to clean up.&#34;</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">cancel</span>()
+</span></span><span style="display:flex;"><span>    }()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Wait on input values from the spawned goroutines.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">for</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// This block uses some clever channel tricks. If `ok` is false, it
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// means that the channel has been closed. A receive operation on a
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// closed channel immediately returns its type&#39;s zero value, but a
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// receive operation on a nil channel will never return. Once the
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// channel has been closed, we want to set it to nil to ensure that
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// that arm of the switch statement is never executed again.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">select</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">case</span> <span style="color:#a6e22e">recipe</span>, <span style="color:#a6e22e">ok</span> <span style="color:#f92672">:=</span> <span style="color:#f92672">&lt;-</span><span style="color:#a6e22e">rc</span>:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> !<span style="color:#a6e22e">ok</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#a6e22e">rc</span> = <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e">// Do something with recipe. This will probably involve
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#75715e">// saving it somewhere, unmarshaling it into a struct,
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#75715e">// or both. Could be a good opportunity for another
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#75715e">// pipeline!
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            <span style="color:#a6e22e">_</span> = <span style="color:#a6e22e">recipe</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Println</span>(<span style="color:#e6db74">&#34;Got a recipe.&#34;</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">case</span> <span style="color:#a6e22e">err</span>, <span style="color:#a6e22e">ok</span> <span style="color:#f92672">:=</span> <span style="color:#f92672">&lt;-</span><span style="color:#a6e22e">errc</span>:
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> !<span style="color:#a6e22e">ok</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#a6e22e">errc</span> = <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Println</span>(<span style="color:#e6db74">&#34;Error: &#34;</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">err</span>.<span style="color:#a6e22e">Error</span>())
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Once both channels have been closed and set to nil, we need to
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// break out of the loop to avoid hanging indefinitely on no input.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">rc</span> <span style="color:#f92672">==</span> <span style="color:#66d9ef">nil</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">errc</span> <span style="color:#f92672">==</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// downloadRecipes spawns numGoroutines goroutines to download recipes from Brewtoad.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// The provided context can be used to cancel in-flight requests. The input channel
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// provides the page numbers that should be downloaded. This method returns two channels:
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// one for downloaded recipes in XML format, and one for any errors encountered.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">downloadRecipes</span>(<span style="color:#a6e22e">numGoroutines</span> <span style="color:#66d9ef">int</span>, <span style="color:#a6e22e">ctx</span> <span style="color:#a6e22e">context</span>.<span style="color:#a6e22e">Context</span>, <span style="color:#a6e22e">pc</span> <span style="color:#f92672">&lt;-</span><span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">int</span>) (<span style="color:#f92672">&lt;-</span><span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">string</span>, <span style="color:#f92672">&lt;-</span><span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">error</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">var</span> (
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">wg</span>   <span style="color:#a6e22e">sync</span>.<span style="color:#a6e22e">WaitGroup</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">rc</span>   = make(<span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">string</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">errc</span> = make(<span style="color:#66d9ef">chan</span> <span style="color:#66d9ef">error</span>)
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">wg</span>.<span style="color:#a6e22e">Add</span>(<span style="color:#a6e22e">numGoroutines</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">g</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">g</span> &lt; <span style="color:#a6e22e">numGoroutines</span>; <span style="color:#a6e22e">g</span><span style="color:#f92672">++</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>() {
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">running</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">running</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">select</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">case</span> <span style="color:#a6e22e">page</span>, <span style="color:#a6e22e">ok</span> <span style="color:#f92672">:=</span> <span style="color:#f92672">&lt;-</span><span style="color:#a6e22e">pc</span>:
+</span></span><span style="display:flex;"><span>                    <span style="color:#66d9ef">if</span> !<span style="color:#a6e22e">ok</span> {
+</span></span><span style="display:flex;"><span>                        <span style="color:#a6e22e">running</span> = <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>                        <span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>                    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>                    <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">getRecipesForPage</span>(<span style="color:#a6e22e">ctx</span>, <span style="color:#a6e22e">rc</span>, <span style="color:#a6e22e">page</span>)
+</span></span><span style="display:flex;"><span>                    <span style="color:#75715e">// Don&#39;t send anything on the error channel if it was nil,
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>                    <span style="color:#75715e">// or if cancellation was requested, since we&#39;re trying to
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>                    <span style="color:#75715e">// abort everything anyway.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>                    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">ctx</span>.<span style="color:#a6e22e">Err</span>() <span style="color:#f92672">!=</span> <span style="color:#a6e22e">context</span>.<span style="color:#a6e22e">Canceled</span> {
+</span></span><span style="display:flex;"><span>                        <span style="color:#a6e22e">errc</span> <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>                    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e">// A receive event on this channel means that we&#39;re cancelled,
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>                <span style="color:#75715e">// so we should stop what we&#39;re doing and exit the loop.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>                <span style="color:#66d9ef">case</span> <span style="color:#f92672">&lt;-</span><span style="color:#a6e22e">ctx</span>.<span style="color:#a6e22e">Done</span>():
+</span></span><span style="display:flex;"><span>                    <span style="color:#a6e22e">running</span> = <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>                }
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">wg</span>.<span style="color:#a6e22e">Done</span>()
+</span></span><span style="display:flex;"><span>        }()
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Once all goroutines have finished, close the returned channels.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>() {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">wg</span>.<span style="color:#a6e22e">Wait</span>()
+</span></span><span style="display:flex;"><span>        close(<span style="color:#a6e22e">rc</span>)
+</span></span><span style="display:flex;"><span>        close(<span style="color:#a6e22e">errc</span>)
+</span></span><span style="display:flex;"><span>    }()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">rc</span>, <span style="color:#a6e22e">errc</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// getRecipesForPage downloads a recipe page and sends each recipe found
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// there along the provided channel.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">getRecipesForPage</span>(<span style="color:#a6e22e">ctx</span> <span style="color:#a6e22e">context</span>.<span style="color:#a6e22e">Context</span>, <span style="color:#a6e22e">rc</span> <span style="color:#66d9ef">chan</span><span style="color:#f92672">&lt;-</span> <span style="color:#66d9ef">string</span>, <span style="color:#a6e22e">page</span> <span style="color:#66d9ef">int</span>) <span style="color:#66d9ef">error</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">doc</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">downloadPage</span>(<span style="color:#a6e22e">ctx</span>, <span style="color:#a6e22e">page</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">link</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">findRecipeLinks</span>(<span style="color:#a6e22e">doc</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">r</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">downloadBeerXml</span>(<span style="color:#a6e22e">ctx</span>, <span style="color:#a6e22e">link</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">beerXml</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">ioutil</span>.<span style="color:#a6e22e">ReadAll</span>(<span style="color:#a6e22e">r</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">Close</span>()
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">rc</span> <span style="color:#f92672">&lt;-</span> string(<span style="color:#a6e22e">beerXml</span>)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// downloadPage downloads a recipe page from Brewtoad and parses it into
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// an HTML document.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">downloadPage</span>(<span style="color:#a6e22e">ctx</span> <span style="color:#a6e22e">context</span>.<span style="color:#a6e22e">Context</span>, <span style="color:#a6e22e">page</span> <span style="color:#66d9ef">int</span>) (<span style="color:#f92672">*</span><span style="color:#a6e22e">html</span>.<span style="color:#a6e22e">Node</span>, <span style="color:#66d9ef">error</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">req</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">NewRequest</span>(<span style="color:#e6db74">&#34;GET&#34;</span>, <span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Sprintf</span>(
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;https://www.brewtoad.com/recipes?page=%d&amp;sort=rank&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">page</span>,
+</span></span><span style="display:flex;"><span>    ), <span style="color:#66d9ef">nil</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>, <span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">resp</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">DefaultClient</span>.<span style="color:#a6e22e">Do</span>(<span style="color:#a6e22e">req</span>.<span style="color:#a6e22e">WithContext</span>(<span style="color:#a6e22e">ctx</span>))
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>, <span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">defer</span> <span style="color:#a6e22e">resp</span>.<span style="color:#a6e22e">Body</span>.<span style="color:#a6e22e">Close</span>()
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">html</span>.<span style="color:#a6e22e">Parse</span>(<span style="color:#a6e22e">resp</span>.<span style="color:#a6e22e">Body</span>)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// findRecipeLinks traverses an HTML document looking for beer recipe links.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">findRecipeLinks</span>(<span style="color:#a6e22e">doc</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">html</span>.<span style="color:#a6e22e">Node</span>) (<span style="color:#a6e22e">links</span> []<span style="color:#66d9ef">string</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">var</span> <span style="color:#a6e22e">f</span> <span style="color:#66d9ef">func</span>(<span style="color:#f92672">*</span><span style="color:#a6e22e">html</span>.<span style="color:#a6e22e">Node</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">f</span> = <span style="color:#66d9ef">func</span>(<span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">html</span>.<span style="color:#a6e22e">Node</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">defer</span> <span style="color:#66d9ef">func</span>() {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">c</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">FirstChild</span>; <span style="color:#a6e22e">c</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span>; <span style="color:#a6e22e">c</span> = <span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">NextSibling</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#a6e22e">f</span>(<span style="color:#a6e22e">c</span>)
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">Type</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">html</span>.<span style="color:#a6e22e">ElementNode</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">Data</span> <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;a&#34;</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">classes</span>, <span style="color:#a6e22e">ok</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">getAttr</span>(<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">Attr</span>, <span style="color:#e6db74">&#34;class&#34;</span>); <span style="color:#a6e22e">ok</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">class</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">Fields</span>(<span style="color:#a6e22e">classes</span>) {
+</span></span><span style="display:flex;"><span>                    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">class</span> <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;recipe-link&#34;</span> {
+</span></span><span style="display:flex;"><span>                        <span style="color:#a6e22e">href</span>, <span style="color:#a6e22e">_</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">getAttr</span>(<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">Attr</span>, <span style="color:#e6db74">&#34;href&#34;</span>)
+</span></span><span style="display:flex;"><span>                        <span style="color:#a6e22e">links</span> = append(<span style="color:#a6e22e">links</span>, <span style="color:#a6e22e">href</span>)
+</span></span><span style="display:flex;"><span>                        <span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>                    }
+</span></span><span style="display:flex;"><span>                }
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">f</span>(<span style="color:#a6e22e">doc</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// downloadBeerXml downloads the XML for the provided recipe link. If no error
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// is returned, then the io.ReadCloser must be closed by the caller in order to
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// prevent a resource leak.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">downloadBeerXml</span>(<span style="color:#a6e22e">ctx</span> <span style="color:#a6e22e">context</span>.<span style="color:#a6e22e">Context</span>, <span style="color:#a6e22e">link</span> <span style="color:#66d9ef">string</span>) (<span style="color:#a6e22e">io</span>.<span style="color:#a6e22e">ReadCloser</span>, <span style="color:#66d9ef">error</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">req</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">NewRequest</span>(<span style="color:#e6db74">&#34;GET&#34;</span>, <span style="color:#e6db74">&#34;https://www.brewtoad.com&#34;</span><span style="color:#f92672">+</span><span style="color:#a6e22e">link</span><span style="color:#f92672">+</span><span style="color:#e6db74">&#34;.xml&#34;</span>, <span style="color:#66d9ef">nil</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>, <span style="color:#a6e22e">errors</span>.<span style="color:#a6e22e">New</span>(<span style="color:#e6db74">&#34;failed to build beer xml request: &#34;</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">err</span>.<span style="color:#a6e22e">Error</span>())
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">resp</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">DefaultClient</span>.<span style="color:#a6e22e">Do</span>(<span style="color:#a6e22e">req</span>.<span style="color:#a6e22e">WithContext</span>(<span style="color:#a6e22e">ctx</span>))
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>, <span style="color:#a6e22e">errors</span>.<span style="color:#a6e22e">New</span>(<span style="color:#e6db74">&#34;failed to get beer xml: &#34;</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">err</span>.<span style="color:#a6e22e">Error</span>())
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">resp</span>.<span style="color:#a6e22e">Body</span>, <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// getRecipePageCount downloads the first page and checks the pagination to determine
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// how many pages of recipes there are.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">getRecipePageCount</span>() (<span style="color:#66d9ef">int</span>, <span style="color:#66d9ef">error</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">resp</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">Get</span>(<span style="color:#e6db74">&#34;https://www.brewtoad.com/recipes?page=1&amp;sort=rank&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>, <span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">defer</span> <span style="color:#a6e22e">resp</span>.<span style="color:#a6e22e">Body</span>.<span style="color:#a6e22e">Close</span>()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">doc</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">html</span>.<span style="color:#a6e22e">Parse</span>(<span style="color:#a6e22e">resp</span>.<span style="color:#a6e22e">Body</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>, <span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">var</span> <span style="color:#a6e22e">pageCount</span> <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">var</span> <span style="color:#a6e22e">f</span> <span style="color:#66d9ef">func</span>(<span style="color:#f92672">*</span><span style="color:#a6e22e">html</span>.<span style="color:#a6e22e">Node</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">f</span> = <span style="color:#66d9ef">func</span>(<span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">html</span>.<span style="color:#a6e22e">Node</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">defer</span> <span style="color:#66d9ef">func</span>() {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">pageCount</span> <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">c</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">FirstChild</span>; <span style="color:#a6e22e">c</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span>; <span style="color:#a6e22e">c</span> = <span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">NextSibling</span> {
+</span></span><span style="display:flex;"><span>                    <span style="color:#a6e22e">f</span>(<span style="color:#a6e22e">c</span>)
+</span></span><span style="display:flex;"><span>                }
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">Type</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">html</span>.<span style="color:#a6e22e">ElementNode</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">Data</span> <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;a&#34;</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">classes</span>, <span style="color:#a6e22e">ok</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">getAttr</span>(<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">Attr</span>, <span style="color:#e6db74">&#34;class&#34;</span>); <span style="color:#a6e22e">ok</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">class</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">Fields</span>(<span style="color:#a6e22e">classes</span>) {
+</span></span><span style="display:flex;"><span>                    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">class</span> <span style="color:#f92672">==</span> <span style="color:#e6db74">&#34;next_page&#34;</span> {
+</span></span><span style="display:flex;"><span>                        <span style="color:#a6e22e">pageCount</span>, <span style="color:#a6e22e">err</span> = <span style="color:#a6e22e">strconv</span>.<span style="color:#a6e22e">Atoi</span>(<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">PrevSibling</span>.<span style="color:#a6e22e">PrevSibling</span>.<span style="color:#a6e22e">FirstChild</span>.<span style="color:#a6e22e">Data</span>)
+</span></span><span style="display:flex;"><span>                        <span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>                    }
+</span></span><span style="display:flex;"><span>                }
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">f</span>(<span style="color:#a6e22e">doc</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">pageCount</span>, <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// getAttr is a utility method for looking up an HTML element attribute.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">getAttr</span>(<span style="color:#a6e22e">attrs</span> []<span style="color:#a6e22e">html</span>.<span style="color:#a6e22e">Attribute</span>, <span style="color:#a6e22e">name</span> <span style="color:#66d9ef">string</span>) (<span style="color:#66d9ef">string</span>, <span style="color:#66d9ef">bool</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">attr</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">attrs</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">attr</span>.<span style="color:#a6e22e">Key</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">name</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">attr</span>.<span style="color:#a6e22e">Val</span>, <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;&#34;</span>, <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>And as a bonus, a couple type definitions for unmarshaling Brewtoad recipe
+results into a more usable form:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">RecipeList</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">Recipes</span> []<span style="color:#a6e22e">Recipe</span> <span style="color:#e6db74">`xml:&#34;RECIPE&#34;`</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Recipe</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">XMLName</span>    <span style="color:#a6e22e">xml</span>.<span style="color:#a6e22e">Name</span> <span style="color:#e6db74">`xml:&#34;RECIPE&#34;`</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">Name</span>       <span style="color:#66d9ef">string</span>   <span style="color:#e6db74">`xml:&#34;NAME&#34;`</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">Type</span>       <span style="color:#66d9ef">string</span>   <span style="color:#e6db74">`xml:&#34;TYPE&#34;`</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">Brewer</span>     <span style="color:#66d9ef">string</span>   <span style="color:#e6db74">`xml:&#34;BREWER&#34;`</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">BatchSize</span>  <span style="color:#66d9ef">string</span>   <span style="color:#e6db74">`xml:&#34;BATCH_SIZE&#34;`</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">BoilSize</span>   <span style="color:#66d9ef">string</span>   <span style="color:#e6db74">`xml:&#34;BOIL_SIZE&#34;`</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">BoilTime</span>   <span style="color:#66d9ef">string</span>   <span style="color:#e6db74">`xml:&#34;BOIL_TIME&#34;`</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">Efficiency</span> <span style="color:#66d9ef">string</span>   <span style="color:#e6db74">`xml:&#34;EFFICIENCY&#34;`</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">Style</span>      <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">StyleGuide</span>     <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;STYLE_GUIDE&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Version</span>        <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;VERSION&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Name</span>           <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;NAME&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">StyleLetter</span>    <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;STYLE_LETTER&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">CategoryNumber</span> <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;CATEGORY_NUMBER&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Type</span>           <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;TYPE&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">OGMin</span>          <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;OG_MIN&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">OGMax</span>          <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;OG_MAX&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">FGMin</span>          <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;FG_MIN&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">FGMax</span>          <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;FG_MAX&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">ABVMin</span>         <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;ABV_MIN&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">ABVMax</span>         <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;ABV_MAX&#34;`</span>
+</span></span><span style="display:flex;"><span>    } <span style="color:#e6db74">`xml:&#34;STYLE&#34;`</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">Fermentables</span> []<span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Name</span>           <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;NAME&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Origin</span>         <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;ORIGIN&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Type</span>           <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;TYPE&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Yield</span>          <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;YIELD&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Amount</span>         <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;AMOUNT&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">DisplayAmount</span>  <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;DISPLAY_AMOUNT&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Potential</span>      <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;POTENTIAL&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Color</span>          <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;COLOR&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">DisplayColor</span>   <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;DISPLAY_COLOR&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">AddAfterBoil</span>   <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;ADD_AFTER_BOIL&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">CoarseFineDiff</span> <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;COARSE_FINE_DIFF&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Moisture</span>       <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;MOISTURE&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">DiastaticPower</span> <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;DIASTATIC_POWER&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Protein</span>        <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;PROTEIN&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">MaxInBatch</span>     <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;MAX_IN_BATCH&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">RecommendMash</span>  <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;RECOMMEND_MASH&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">IBUGalPerLB</span>    <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;IBU_GAL_PER_LB&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Notes</span>          <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;NOTES&#34;`</span>
+</span></span><span style="display:flex;"><span>    } <span style="color:#e6db74">`xml:&#34;FERMENTABLES&gt;FERMENTABLE&#34;`</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">Hops</span> []<span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Name</span>          <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;NAME&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Origin</span>        <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;ORIGIN&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Alpha</span>         <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;ALPH&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Beta</span>          <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;BETA&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Amount</span>        <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;AMOUNT&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">DisplayAmount</span> <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;DISPLAY_AMOUNT&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Use</span>           <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;USE&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Form</span>          <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;FORM&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Time</span>          <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;TIME&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">DisplayTime</span>   <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;DISPLAY_TIME&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Notes</span>         <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;NOTES&#34;`</span>
+</span></span><span style="display:flex;"><span>    } <span style="color:#e6db74">`xml:&#34;HOPS&gt;HOP&#34;`</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">Yeasts</span> []<span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Laboratory</span>  <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;LABORATORY&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Name</span>        <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;NAME&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Type</span>        <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;TYPE&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Form</span>        <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;FORM&#34;`</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">Attenuation</span> <span style="color:#66d9ef">string</span> <span style="color:#e6db74">`xml:&#34;ATTENUATION&#34;`</span>
+</span></span><span style="display:flex;"><span>    } <span style="color:#e6db74">`xml:&#34;YEASTS&gt;YEAST&#34;`</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// TODO: The &lt;MISCS&gt; tag.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}</span></span></code></pre></div>
+
+  </div>
+
+    </main>
+
+    
+  </body>
+</html>

@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Version 7.0</title>
+    <link>https://damienradtke.com/</link>
+    <description>Recent content on Version 7.0</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Tue, 24 May 2022 00:00:00 +0000</lastBuildDate><atom:link href="https://damienradtke.com/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>About</title>
+      <link>https://damienradtke.com/pages/about/</link>
+      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      
+      <guid>https://damienradtke.com/pages/about/</guid>
+      <description>Welcome to my blog!
+I&amp;rsquo;m Damien, a software developer based in Chicago. This website is my place for occasionally writing blog posts, usually around programming. They&amp;rsquo;re not always interesting or useful, but hey, it&amp;rsquo;s about the journey, right?
+My programming interests lately include
+Go and Rust Networking infrastructure Desktop application development with GTK Because I like to think of myself as a well-rounded person, some of my non-programming interests include</description>
+    </item>
+    
+    <item>
+      <title>Resume</title>
+      <link>https://damienradtke.com/pages/resume/</link>
+      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      
+      <guid>https://damienradtke.com/pages/resume/</guid>
+      <description>Information Email me@damienradtke.com Website https://damienradtke.com Phone (651) 245-3382 Location Chicago, IL Repositories github.com/dradtke — git.sr.ht/~damien Education BS in Math &amp;amp; Computer Science from DePaul University Career Experience April 2016 - present | Software Engineer @ Braintree/PayPal Current group tech lead for the Reporting Platform team Develops new features and bug fixes across a number of different systems as a senior individual contributor Primary architect of our Report Builder application, and contributing architect of our reporting data warehouse Meets with product managers to help define product requirements, provide estimates &amp;amp; insights, and answer questions Mentors and trains engineers on software development practices and internal systems Provides production support for critical reporting systems Constantly working to improve team efficiency by optimizing our tools and workflows April 2015 - April 2016 | CTO / Senior Developer @ Build This LLC Lead development of a successful Spanish language learning site Assisted with development and maintenance of web and Android apps Mentored junior developers by providing assistance and advice on best practices Met with clients to discover business requirements and collaborate on solution design February 2012 - April 2015 | Software Engineer @ Channel IQ Maintained .</description>
+    </item>
+    
+    <item>
+      <title>Building GTK4 Applications Like Websites</title>
+      <link>https://damienradtke.com/post/building-gtk-applications-like-websites/</link>
+      <pubDate>Tue, 24 May 2022 00:00:00 +0000</pubDate>
+      
+      <guid>https://damienradtke.com/post/building-gtk-applications-like-websites/</guid>
+      <description>The modern web, broadly, consists of two distinct innovations:
+The technology for rendering and interacting with web pages (also known as the trifecta of HTML, CSS, and JavaScript) The client-server deployment model, which allows a single desktop application (your web browser) to alter its behavior using instructions sent over the network by a web server Whether you love it or hate it, web rendering and interaction technology is widely used, both on the web and off.</description>
+    </item>
+    
+    <item>
+      <title>Hot Reload in Uno and GTK</title>
+      <link>https://damienradtke.com/post/hot-reload-uno-gtk/</link>
+      <pubDate>Fri, 30 Jul 2021 00:00:00 +0000</pubDate>
+      
+      <guid>https://damienradtke.com/post/hot-reload-uno-gtk/</guid>
+      <description>Uno While playing around with Microsoft&amp;rsquo;s Uno Platform, I discovered its super-neat XAML Hot Reload feature. It basically does exactly what you think it would; while the app is running, changes made to any XAML file will be reflected automatically, without needing to re-build anything. This is basically the desktop development equivalent of LiveReload, and is a great way to tighten the feedback loop and enable faster development.
+Unfortunately, my laptop only runs Linux, and their documentation requires you to use the Visual Studio Add-in in order to use hot reload.</description>
+    </item>
+    
+    <item>
+      <title>Building a Cloud™-Free Hashistack Cluster 🌥</title>
+      <link>https://damienradtke.com/post/building-a-cloudfree-hashistack-cluster/</link>
+      <pubDate>Sat, 12 Sep 2020 00:00:00 +0000</pubDate>
+      
+      <guid>https://damienradtke.com/post/building-a-cloudfree-hashistack-cluster/</guid>
+      <description>Table of Contents Preface Getting Started Safety First: TLS Behind the Firewall Provisioning With Terraform Running a Website Final Thoughts Preface &amp;ldquo;Hashistack&amp;rdquo; refers to a network cluster based on HashiCorp tools, and after off-and-on spending a considerable amount of time on it, the architecture of my own cluster (on which this blog is running, among other personal projects) has finally (mostly) stabilized. In this post I will walk you through its high-level structure, some of the benefits provided, and hopefully show you how you can build a similar cluster for your personal or professional projects.</description>
+    </item>
+    
+    <item>
+      <title>Running this Blog on Nomad</title>
+      <link>https://damienradtke.com/post/blog-on-nomad/</link>
+      <pubDate>Tue, 12 Nov 2019 00:00:00 +0000</pubDate>
+      
+      <guid>https://damienradtke.com/post/blog-on-nomad/</guid>
+      <description>In an attempt to consolidate my various personal projects, and to be efficient about how much money I spend on VPS hosting, this blog is now running on my tiny Nomad cluster. The ID for this allocation is:
+The components involved are:
+Nomad Consul Vault Fabio multirootca The Nomad deployment guide recommends either three or five servers, but I&amp;rsquo;m not really running business-critical applications, so I currently only have one server and one client node.</description>
+    </item>
+    
+    <item>
+      <title>GopherJS and RPC over HTTP</title>
+      <link>https://damienradtke.com/post/gopherpc/</link>
+      <pubDate>Wed, 20 Jun 2018 00:00:00 +0000</pubDate>
+      
+      <guid>https://damienradtke.com/post/gopherpc/</guid>
+      <description>GopherJS enables web development using Go for both the backend server code and frontend browser code. One of the neat things this allows you to do, which the NodeJS community is all too happy to tell you, is share code between the frontend and backend. However, JavaScript is a dynamic language, and lacks many of the static analysis tools that Go provides. By taking advantage of Go&amp;rsquo;s static analysis, it is possible to develop HTTP endpoints in the backend and automatically generate frontend code for calling them, using Go models and types end-to-end.</description>
+    </item>
+    
+    <item>
+      <title>Deploying openSUSE on Vultr</title>
+      <link>https://damienradtke.com/post/deploying-opensuse-on-vultr/</link>
+      <pubDate>Fri, 16 Jun 2017 16:25:58 -0700</pubDate>
+      
+      <guid>https://damienradtke.com/post/deploying-opensuse-on-vultr/</guid>
+      <description>&lt;p&gt;As an avid openSUSE user and fan, I wish more VPS providers supported openSUSE
+images. Linode and Amazon both do, and there&amp;rsquo;s nothing wrong with them, but I
+recently learned about Vultr&amp;rsquo;s &lt;a href=&#34;https://www.vultr.com/features/uploadiso/&#34;&gt;custom
+ISO&lt;/a&gt; feature and decided to try to
+bring openSUSE to Vultr! Vultr provides guides for installing CoreOS and
+Gentoo, after all, so why not openSUSE?&lt;/p&gt;</description>
+    </item>
+    
+    <item>
+      <title>Nomad Task Versioning</title>
+      <link>https://damienradtke.com/post/nomad-task-versioning/</link>
+      <pubDate>Fri, 10 Mar 2017 15:27:58 -0600</pubDate>
+      
+      <guid>https://damienradtke.com/post/nomad-task-versioning/</guid>
+      <description>Lately I&amp;rsquo;ve been playing around with a lot of HashiCorp tools including Nomad, their solution to application scheduling. Despite its relative immaturity, there are a few things I really like about it: straightforward, readable configuration syntax; ease of integration with other HashiCorp tools; and flexible runtime drivers, including raw execution, meaning you&amp;rsquo;re not tied down to containers.
+However, there&amp;rsquo;s one area in which Nomad&amp;rsquo;s documentation seems to be severely lacking: versioning.</description>
+    </item>
+    
+    <item>
+      <title>Running Fleet Without Docker</title>
+      <link>https://damienradtke.com/post/fleet-without-docker/</link>
+      <pubDate>Fri, 11 Nov 2016 13:15:33 -0600</pubDate>
+      
+      <guid>https://damienradtke.com/post/fleet-without-docker/</guid>
+      <description>Introduction The CoreOS project is doing some very interesting work on how to build, deploy, and scale web applications. Their big focus is to keep the platform as minimal as possible, which means that everything must be run as a container. That in turn means that the stock OS doesn&amp;rsquo;t have to worry about any language runtimes or compilers, since those will be bundled with the app itself.
+This all sounds amazing on paper, but Docker isn&amp;rsquo;t without its flaws, and the kind of orchestration that CoreOS recommends comes with its own complexities.</description>
+    </item>
+    
+    <item>
+      <title>Beer and Concurrent HTTP Pipelines</title>
+      <link>https://damienradtke.com/post/beer-and-http-pipelines/</link>
+      <pubDate>Fri, 28 Oct 2016 13:34:04 -0500</pubDate>
+      
+      <guid>https://damienradtke.com/post/beer-and-http-pipelines/</guid>
+      <description>This post is going to be a variation of the famous pipelines and cancellation Go blog post, modified for crawling a website, and updated using net/http&amp;rsquo;s native support for request contexts introduced in Go 1.7.
+Downloading Beer Recipes My motivation for building a concurrent website crawler was to be able to download a catalog of all public recipes on Brewtoad. Each recipe can be individually exported as XML, but from what I could tell there was no API to be able to download them all.</description>
+    </item>
+    
+    <item>
+      <title>Rusty Dynamic Loading</title>
+      <link>https://damienradtke.com/post/rusty-dynamic-loading/</link>
+      <pubDate>Mon, 26 Sep 2016 00:00:00 +0000</pubDate>
+      
+      <guid>https://damienradtke.com/post/rusty-dynamic-loading/</guid>
+      <description>Introduction One of my favorite things that I&amp;rsquo;ve learned so far from Casey Muratori&amp;rsquo;s excellent Handmade Hero series of videos is his demonstration of how to load game code dynamically. This allows you to make changes to the running game without having to close the existing process, which enables very rapid iteration during development. However, Casey only shows you how to do it in C using Win32. In this post, I will demonstrate how to achieve the same basic effect using cross-platform Rust.</description>
+    </item>
+    
+    <item>
+      <title>js/template</title>
+      <link>https://damienradtke.com/post/go-js-template/</link>
+      <pubDate>Tue, 31 May 2016 23:10:28 -0500</pubDate>
+      
+      <guid>https://damienradtke.com/post/go-js-template/</guid>
+      <description>&lt;p&gt;One of my favorite packages in the Go standard library is
+&lt;a href=&#34;https://golang.org/pkg/html/template/&#34;&gt;html/template&lt;/a&gt;. Not only does it provide a solid templating
+language equivalent to &lt;a href=&#34;https://golang.org/pkg/text/template/&#34;&gt;text/template&lt;/a&gt;, but it ensures its
+safety of any HTML or JavaScript you throw at it. Unfortunately,
+it can be a little limiting when working with external JavaScript resources,
+but there are a couple options for working around those limitations.&lt;/p&gt;</description>
+    </item>
+    
+    <item>
+      <title>Building a Giphy-Searching App in GTK&#43; 3</title>
+      <link>https://damienradtke.com/post/gtk-giphy/</link>
+      <pubDate>Mon, 04 Apr 2016 00:00:00 +0000</pubDate>
+      
+      <guid>https://damienradtke.com/post/gtk-giphy/</guid>
+      <description>&lt;p&gt;Web applications get all the hype these days, so why not buck the trend
+and build a desktop application instead? In this post I&amp;rsquo;m going to use
+Vala and GTK+ to build a simple desktop program for searching Giphy,
+the popular GIF database.&lt;/p&gt;</description>
+    </item>
+    
+    <item>
+      <title>Amazon Glacier Backups in Bash</title>
+      <link>https://damienradtke.com/post/glacier-backup-bash/</link>
+      <pubDate>Thu, 24 Mar 2016 11:46:20 -0500</pubDate>
+      
+      <guid>https://damienradtke.com/post/glacier-backup-bash/</guid>
+      <description>&lt;p&gt;Why use an official Java or .NET-based algorithm when you can write your own
+in Bash? This script uses the AWS CLI tool to back up a file to an Amazon
+Glacier vault, without the need for a heavy runtime.&lt;/p&gt;</description>
+    </item>
+    
+    <item>
+      <title>Measuring C API Coverage with Go</title>
+      <link>https://damienradtke.com/post/cgo-api-coverage/</link>
+      <pubDate>Tue, 03 Dec 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://damienradtke.com/post/cgo-api-coverage/</guid>
+      <description>About a year ago I started working on an initial batch of Go bindings to the Allegro 5 game library, and while I like the idea of producing a fully-functional foreign-interface library, I didn&amp;rsquo;t finish during the initial period of development, and the project lay dormant for months. Recently I began to revive it, but as soon as I did, I ran into a problem: how much had I already done?</description>
+    </item>
+    
+  </channel>
+</rss>

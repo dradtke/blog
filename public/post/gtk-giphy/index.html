@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-us" lang="en-us">
+<head>
+  <link href="//gmpg.org/xfn/11" rel="profile">
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="generator" content="Hugo 0.115.1">
+
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Building a Giphy-Searching App in GTK&#43; 3 &middot; Version 7.0</title>
+
+  
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/print.css" media="print">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/poole.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/syntax.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/hyde.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Abril+Fatface|PT+Sans:400,400i,700">
+
+
+  
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="/apple-touch-icon-144-precomposed.png">
+  <link rel="shortcut icon" href="/favicon.png">
+
+  
+  
+</head>
+
+  <body class=" ">
+  <aside class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      <a href="https://damienradtke.com/"><h1>Version 7.0</h1></a>
+      <p class="lead">
+       Fixes many known issues with version 6.0 
+      </p>
+    </div>
+
+    <nav>
+      <ul class="sidebar-nav">
+        <li><a href="https://damienradtke.com/">Home</a> </li>
+        <li><a href="/pages/about"> About </a></li><li><a href="https://github.com/dradtke/"> Projects — Github </a></li><li><a href="https://git.sr.ht/~damien"> Projects — Sourcehut </a></li>
+      </ul>
+    </nav>
+
+    <p>&copy; 2023. All rights reserved. </p>
+  </div>
+</aside>
+
+    <main class="content container">
+    <div class="post">
+    <h1>Building a Giphy-Searching App in GTK&#43; 3</h1>
+    
+      <time datetime=2016-04-04T00:00:00Z class="post-date">Mon, Apr 4, 2016</time>
+    
+
+    <p>Web applications get all the hype these days, so why not buck the trend
+and build a desktop application instead? In this post I&rsquo;m going to use
+Vala and GTK+ to build a simple desktop program for searching Giphy,
+the popular GIF database.</p>
+<p><strong>NOTE</strong>: Windows and Mac users should be able to build the example programs
+here by using <a href="http://valainstaller.sourceforge.net/">Vala for Windows</a>
+and <a href="http://brew.sh/">Homebrew</a> respectively, but I haven&rsquo;t tested it,
+so YMMV.</p>
+<p>To whet your appetite, here&rsquo;s a preview of what it is that we&rsquo;re actually
+trying to build:</p>
+<figure class="regular"><img src="/images/gtk-giphy/giphy-homer.gif"/>
+</figure>
+
+<!-- raw HTML omitted -->
+<p>Full source is provided at the end of Part III.</p>
+<p>Functionally, this app isn&rsquo;t too complicated. You type in a search term,
+hit Enter, and it will look up and display a random GIF matching your query
+along with the URL. Giphy provides an endpoint for this, so all we have to
+do is build the UI around it.</p>
+<h2 id="setting-up">Setting Up</h2>
+<p>This post is going to be focused on GNOME technologies, so you need to have
+the necessary runtime and development libraries installed, and know the
+basics of using a command line to compile code.</p>
+<p>To begin, you will need to install the Vala compiler (I&rsquo;m using 0.28.1), and
+development libraries for the following packages (my version listed as well,
+but other versions should work too):</p>
+<ol>
+<li>
+<p><code>gtk+-3.0</code> (3.16.7)</p>
+</li>
+<li>
+<p><code>libsoup-2.4</code> (2.50.0)</p>
+</li>
+<li>
+<p><code>json-glib-1.0</code> (1.0.4)</p>
+</li>
+</ol>
+<p>You can make sure they&rsquo;re installed properly by running <code>pkg-config --modversion &lt;package&gt;</code>, and if you get a message telling you that the package wasn&rsquo;t found,
+then you are missing the development tools.</p>
+<h2 id="about-vala-and-gnome-development">About Vala and GNOME Development</h2>
+<p>Why am I targeting GNOME? Frankly, because it&rsquo;s what I use (currently running
+GNOME 3 via openSUSE Leap; go check it out if you haven&rsquo;t heard of it!), and the
+GNOME API&rsquo;s are actually fairly pleasant to work with.</p>
+<p>If you&rsquo;d like, this entire application can be written in pure C (as opposed to
+the Qt framework which requires C++), but another benefit of targeting GNOME
+technologies is that it has its own C#-inspired language that compiles to C: Vala.
+As a result, applications written in Vala are just as fast as those written in C,
+but you get a language whose usability is on par with Python.</p>
+<h2 id="running-the-examples">Running the Examples</h2>
+<p>Each part comes with a tar archive containing the source code that summarizes
+what was covered. Each example archive contains two files: the Vala source code,
+and a Makefile. To run each one, extract the contents, <code>cd</code> into the folder,
+and execute <code>make run</code>. Assuming your development environment is set up correctly,
+the application will build and run.</p>
+<h1 id="part-i-hello-world">Part I: Hello World</h1>
+<p>GNOME applications are beginning to make a distinction between two scopes:
+application-level and window-level. It&rsquo;s no big surprise that you can have multiple
+windows of an application open at a time, and GNOME is embracing that usage pattern by
+allowing you to separate the concerns of the application on a global level with those
+that are only concerned with one window at a time.</p>
+<p>For example, imagine that our app is already built. If you&rsquo;d like to do
+two searches at the same time, say to compare results, you&rsquo;d open up two
+windows. Each window would contain the search field, and the image result. However,
+for efficiency&rsquo;s sake, any resources that are shared between the two windows would
+ideally only need to be allocated once. Plus, it usually makes more sense to handle
+application configuration globally.</p>
+<p>Because of this, the application will be broken down into three parts:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">public</span> <span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Window</span> <span style="color:#f92672">:</span> Gtk.ApplicationWindow {
+</span></span><span style="display:flex;"><span>    ...
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">public</span> <span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Application</span> <span style="color:#f92672">:</span> Gtk.Application {
+</span></span><span style="display:flex;"><span>    ...
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> main(<span style="color:#66d9ef">string</span>[] args) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">new</span> Application().run(args);
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>From top-to-bottom, these sections are:</p>
+<ol>
+<li>
+<p>The <code>Window</code> class. This represents a single open instance of the
+application, and will contain the bulk of the code when we&rsquo;re finished.</p>
+</li>
+<li>
+<p>The <code>Application</code> class. This represents the global state of the application.</p>
+</li>
+<li>
+<p>The <code>main</code> method, which is the entrypoint for Vala programs. This part is already
+basically complete, as all it does is instantiate the <code>Application</code> class and start
+it running.</p>
+</li>
+</ol>
+<p>Note that Vala&rsquo;s syntax means that <code>Window</code> extends the <code>ApplicationWindow</code> class defined
+in the <code>Gtk</code> namespace, and <code>Application</code> extends the <code>Application</code> class defined in the
+<code>Gtk</code> namespace.</p>
+<p>Now let&rsquo;s see how the window and application are defined:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">public</span> <span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Window</span> <span style="color:#f92672">:</span> Gtk.ApplicationWindow {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">public</span> Window(Application app) {
+</span></span><span style="display:flex;"><span>        Object(application<span style="color:#f92672">:</span> app, title<span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;Search Giphy&#34;</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">this</span>.show();
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>Note that we define the constructor to accept an instance of our <code>Application</code>, through
+which we&rsquo;ll be able to reference any available global state.</p>
+<p>The <code>Object(...)</code> line is a little weird for those unfamiliar with GObject and Vala,
+but the short of it is that it&rsquo;s Vala&rsquo;s syntax for assigning multiple properties at
+once during construction. In this example, we just specify the window&rsquo;s application
+instance (required) and a title (optional). Lastly, we tell GTK+ to show the window.</p>
+<p><code>Application</code> is similarly short:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">public</span> <span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Application</span> <span style="color:#f92672">:</span> Gtk.Application {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">public</span> Application() {
+</span></span><span style="display:flex;"><span>        Object(
+</span></span><span style="display:flex;"><span>            application_id<span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;com.damienradtke.giphy-searcher&#34;</span>,
+</span></span><span style="display:flex;"><span>            flags<span style="color:#f92672">:</span> ApplicationFlags.FLAGS_NONE
+</span></span><span style="display:flex;"><span>        );
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">protected</span> <span style="color:#66d9ef">override</span> <span style="color:#66d9ef">void</span> activate() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">new</span> Window(<span style="color:#66d9ef">this</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p><code>Application</code> requires two properties to be filled in: a global application id,
+and a set of application flags. Note that the application id can be whatever you want,
+so long as it&rsquo;s unique, and conforms to the <a href="https://wiki.gnome.org/HowDoI/ChooseApplicationID">application id syntax</a>. Most of the
+time, you&rsquo;ll probably just want <code>FLAGS_NONE</code> for the application flags, but there are some
+<a href="http://valadoc.org/#!api=gio-2.0/GLib.ApplicationFlags">adjustments</a> you can make to the application&rsquo;s behavior by adding
+additional flags, separated by <code>|</code>.</p>
+<p>If you run this, you should see a window pop up:</p>
+<figure class="regular"><img src="/images/gtk-giphy/gtk-hello-world.png"/>
+</figure>
+
+<!-- raw HTML omitted -->
+<h1 id="part-ii-actions-signals-and-http">Part II: Actions, Signals, and HTTP</h1>
+<p>Okay, now we can start getting in to the fun stuff. First, let&rsquo;s add a simple text
+entry widget to the window so that we can start playing with it:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">public</span> <span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Window</span> <span style="color:#f92672">:</span> Gtk.ApplicationWindow {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">protected</span> Gtk.Entry search_entry;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">public</span> Window(Application app) {
+</span></span><span style="display:flex;"><span>        Object(application<span style="color:#f92672">:</span> app, title<span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;Search Giphy&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">this</span>.search_entry <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> Gtk.Entry();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">this</span>.add(<span style="color:#66d9ef">this</span>.search_entry);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">this</span>.show_all();
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>If you run this now, you should see a smaller window composed entirely of a
+single text entry field. Obviously not ideal for the final design, but it&rsquo;s all we
+need to move on to learning about actions and signals.</p>
+<h2 id="signals-not-the-unix-kind">Signals (not the Unix kind)</h2>
+<p>Signals are the means by which GTK+ applications operate. GLib is an event-driven
+toolkit, which means the application will sit idle until some event occurs that requires it
+to take action. Every single action you take, such as pressing a key or moving the
+mouse, generates a signal, and every signal can have callbacks connected to it (not
+unlike event listeners in Javascript). Most of the signals emitted during an application&rsquo;s
+lifetime will be ones defined by GTK+ itself, but it&rsquo;s also possible to define your own,
+essentially utilizing GLib itself as a general-purpose notification system.</p>
+<p>In the above code, we create a new text entry widget and add it to the window.
+However, it&rsquo;s not very useful unless we can react to it; in this case, we want to know
+when the user presses Enter. Since this isn&rsquo;t Javascript (zing), all we need to do
+is connect a callback to the entry&rsquo;s <code>activate</code> signal:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.search_entry <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> Gtk.Entry();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Listen for the user&#39;s Enter key.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">this</span>.search_entry.activate.connect(() <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    stdout.printf(
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;search entry powers, activate! form of: %s!</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">this</span>.search_entry.get_text()
+</span></span><span style="display:flex;"><span>    );
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.add(<span style="color:#66d9ef">this</span>.search_entry);</span></span></code></pre></div>
+<p>Note how the syntax here works for listening to a signal. Signals are available directly
+as properties of the object (unlike in C, where signals are referenced as strings),
+so we add a callback by calling the signal&rsquo;s <code>connect()</code> method and providing it one.
+The callback provided in this example uses Vala&rsquo;s <a href="https://wiki.gnome.org/Projects/Vala/Tutorial#Anonymous_Methods_.2BAC8_Closures">closure syntax</a>, but it can
+be a function reference too. Inside the callback, we print out a message using the value
+of the text field.</p>
+<h2 id="actions">Actions</h2>
+<p>Now that we can react to user input, we need to figure out how exactly to do that.
+In addition to custom signals, GLib also provides a way to define what <em>actions</em>
+can be taken by our application. An <a href="http://valadoc.org/#!api=gio-2.0/GLib.Action">action</a> represents a higher-level view of
+user input than signals do, and are also used to build application and window menus. We
+won&rsquo;t be building any menus here, but we still want to formalize the action in order to
+decouple it from the widget.</p>
+<p>At the top of the <code>Window</code> constructor, let&rsquo;s define an action. Note that this is intended
+to be a window-level action, and not an application-level one:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">public</span> Window(Application app) {
+</span></span><span style="display:flex;"><span>    Object(application<span style="color:#f92672">:</span> app, title<span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;Search Giphy&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Register window actions.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// This defines an action called &#34;search-random&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// that exepects a string parameter.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">var</span> search_random <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> SimpleAction(
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;search-random&#34;</span>, VariantType.STRING
+</span></span><span style="display:flex;"><span>    );
+</span></span><span style="display:flex;"><span>    search_random.activate.connect(<span style="color:#66d9ef">this</span>.search_random_cb);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.add_action(search_random);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Search entry code goes here.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    ...
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> <span style="color:#66d9ef">void</span> search_random_cb(Variant<span style="color:#f92672">?</span> parameter) {
+</span></span><span style="display:flex;"><span>    ...
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>Not terribly difficult. Each action requires a name (by convention, one that&rsquo;s hyphenated
+and lower-case), and the type of the parameter that expects, which can be <code>null</code> if it
+doesn&rsquo;t expect any parameters. The action&rsquo;s <code>activate</code> signal is then connected to the
+<code>search_random_cb</code> method, and the action is registered to the window.</p>
+<p>Note the use of <code>Variant</code> and <code>VariantType</code> in this code. Because Vala compiles to C; and in
+particular, GObject-based C; action parameters are provided as a <a href="http://valadoc.org/#!api=glib-2.0/GLib.Variant">Variant</a>.
+When we define the action, we tell GLib that its parameter should be a <code>Variant</code> that contains
+a string value, and in the callback, we take a single value of type <code>Variant?</code>. The additional
+question mark simply means that it&rsquo;s a <em>nullable</em> value.</p>
+<p>Even though we defined the action as one that takes a string, we still need to use the <code>Variant?</code>
+type in the action callback, otherwise the code won&rsquo;t compile. Fortunately, we can use assertions
+to make the intent of this function clear, without having to scroll through the code to locate
+the original action definition:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> <span style="color:#66d9ef">void</span> search_random_cb(Variant<span style="color:#f92672">?</span> parameter)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">requires</span>(parameter <span style="color:#f92672">!=</span> null)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">requires</span>(parameter.is_of_type(VariantType.STRING))
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// String value accessed via `parameter.get_string()`.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    ...
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>This is a feature of Vala called <a href="https://wiki.gnome.org/Projects/Vala/Tutorial#Assertions_and_Contract_Programming">contract programming</a>, and it&rsquo;s a handy way to make
+sure that any unexpected conditions, such as invoking the action with an invalid parameter type,
+are called out as such, resulting in a much clearer and easy-to-understand error message.</p>
+<p>Now that we have an invokable action, we can go back to the search entry code and tell the
+application to invoke our new action whenever we receive some user input. We can tell GLib to
+emit a signal by calling it as if it were a function:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#75715e">// Invoke the &#34;search-random&#34; action when the user hits Enter.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">this</span>.search_entry.activate.connect(() <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Emit the action&#39;s &#34;activate&#34; signal, providing the search
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// entry&#39;s contents as its parameter.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    search_random.activate(<span style="color:#66d9ef">this</span>.search_entry.get_text());
+</span></span><span style="display:flex;"><span>});</span></span></code></pre></div>
+<h2 id="defining-custom-signals">Defining Custom Signals</h2>
+<p>We defined the &ldquo;search-random&rdquo; action as a way to decouple it from the widget that actually kicks
+it off. Now we&rsquo;re running into the reverse problem; how do you update the application&rsquo;s interface
+based on the results of an action without re-coupling the action back to its widgets? Answer: define
+<a href="https://wiki.gnome.org/Projects/Vala/Tutorial#Signals">custom signals</a> that will be emitted by the action, and listened to by the widgets.</p>
+<p>Let&rsquo;s define a couple signals that will come in handy later:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">public</span> <span style="color:#66d9ef">signal</span> <span style="color:#66d9ef">void</span> search_begin(<span style="color:#66d9ef">string</span> tag);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">public</span> <span style="color:#66d9ef">signal</span> <span style="color:#66d9ef">void</span> search_end(<span style="color:#66d9ef">string</span><span style="color:#f92672">?</span> url, Error<span style="color:#f92672">?</span> e);</span></span></code></pre></div>
+<p>Defining a custom signal only takes one line of code, which is its name and signature.
+Once they&rsquo;re defined, they can be listened to with <code>.connect()</code> and emitted by calling them
+as if they were regular functions.</p>
+<p>These signals answer two questions that the interface will care about: when is a search being
+kicked off, and when has the search ended? In part three, we&rsquo;ll cover how to listen to these
+signals to update the UI; for now, we&rsquo;re strictly interested in how and when they&rsquo;re emitted.
+Note that the parameter names indicate that we want to search Giphy by tag, and we want the result
+as a URL to a <code>.gif</code> image.</p>
+<h2 id="searching-giphy">Searching Giphy</h2>
+<p>Before we get started implementing the &ldquo;search-random&rdquo; action, we need to make one important
+change to the signature of the callback:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> async <span style="color:#66d9ef">void</span> search_random_cb(Variant<span style="color:#f92672">?</span> parameter)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">requires</span>(parameter <span style="color:#f92672">!=</span> null)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">requires</span>(parameter.is_of_type(VariantType.STRING))
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    ...
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>Adding the <code>async</code> keyword identifies this method as an <a href="https://wiki.gnome.org/Projects/Vala/Tutorial#Asynchronous_Methods"><em>asynchronous</em></a> one.
+Because the whole point of <code>search_random_cb()</code> is to query Giphy&rsquo;s API, it needs to be
+asynchronous in order to avoid locking up the whole GUI while waiting for results.
+Writing asynchronous code in Vala is extremely similar to plain ol&rsquo; synchronous code,
+and is exactly the same for the parts that aren&rsquo;t themselves dealing with other asynchronous
+code.</p>
+<p>First, let&rsquo;s define the basic structure of the callback:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> async <span style="color:#66d9ef">void</span> search_random_cb(Variant<span style="color:#f92672">?</span> parameter)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">requires</span>(parameter <span style="color:#f92672">!=</span> null)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">requires</span>(parameter.is_of_type(VariantType.STRING))
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">var</span> tag <span style="color:#f92672">=</span> parameter.get_string();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.search_begin(tag);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Capture any errors that may be thrown during the search.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">try</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">string</span> url <span style="color:#f92672">=</span> ...
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">this</span>.search_end(url, null);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">catch</span> (Error error) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">this</span>.search_end(null, error);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>This sets up the action to properly invoke the <code>search_begin</code> and <code>search_end</code> signals.
+At the beginning of the search, we invoke <code>search_begin</code> with the search term we&rsquo;ll be
+using. Later on, no matter what happens, <code>search_end</code> will be invoked, either with the
+URL we want and a <code>null</code> error, or a <code>null</code> URL and an error value.</p>
+<p>That&rsquo;s all we care about as far as result and error handling. Displaying either the
+resulting <code>.gif</code> or an error message is a task for the GUI, which we&rsquo;re not interested
+in for the moment.</p>
+<h2 id="introducing-soup">Introducing Soup</h2>
+<p><code>libsoup</code> is GNOME&rsquo;s HTTP client/server library that integrates directly with GLib. To
+use it, we first need to create a session instance.
+Soup sessions are a great example of a resource that can be shared across all instances
+of the application; unless you&rsquo;re building something that requires multiple independent
+authentication contexts, it&rsquo;s best to define it as part of <code>Application</code> and not <code>Window</code>,
+so that we only need to allocate one.</p>
+<p>Let&rsquo;s rewrite our <code>Application</code> class a little bit:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">public</span> <span style="color:#66d9ef">class</span> <span style="color:#a6e22e">Application</span> <span style="color:#f92672">:</span> Gtk.Application {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * A Soup session for making HTTP requests. It&#39;s part of the
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * global application so that it can be reused by any window.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     */</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">public</span> Soup.Session session { <span style="color:#66d9ef">get</span>; <span style="color:#66d9ef">private</span> <span style="color:#66d9ef">set</span>; }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * Declare a couple read-only properties.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     */</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">public</span> <span style="color:#66d9ef">unowned</span> <span style="color:#66d9ef">string</span> giphy_host {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">get</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;http://api.giphy.com&#34;</span>;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * Giphy&#39;s public API key.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     */</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">public</span> <span style="color:#66d9ef">unowned</span> <span style="color:#66d9ef">string</span> giphy_api_key {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">get</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> <span style="color:#e6db74">&#34;dc6zaTOxFJmzC&#34;</span>;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">public</span> Application() {
+</span></span><span style="display:flex;"><span>        Object(
+</span></span><span style="display:flex;"><span>            application_id<span style="color:#f92672">:</span> <span style="color:#e6db74">&#34;com.damienradtke.giphy-searcher&#34;</span>,
+</span></span><span style="display:flex;"><span>            flags<span style="color:#f92672">:</span> ApplicationFlags.FLAGS_NONE
+</span></span><span style="display:flex;"><span>        );
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Create a libsoup session.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">this</span>.session <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> Soup.Session();
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">protected</span> <span style="color:#66d9ef">override</span> <span style="color:#66d9ef">void</span> activate() {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">new</span> Window(<span style="color:#66d9ef">this</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>Notice how I not only added the Soup session instance that we wanted,
+but I also snuck in a couple properties that will be used later on.</p>
+<p>Now that we have a session that we can use, let&rsquo;s revisit <code>search_random_cb</code>
+and finish up its implementation. Note how we access the global <code>Application</code>
+instance using the window&rsquo;s <code>application</code> property to retrieve global
+properties and access the global Soup session:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> async <span style="color:#66d9ef">void</span> search_random_cb(Variant<span style="color:#f92672">?</span> parameter)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">requires</span>(parameter <span style="color:#f92672">!=</span> null)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">requires</span>(parameter.is_of_type(VariantType.STRING))
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">var</span> tag <span style="color:#f92672">=</span> parameter.get_string();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.search_begin(tag);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">var</span> app <span style="color:#f92672">=</span> (Application)<span style="color:#66d9ef">this</span>.application;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">var</span> uri <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> Soup.URI(app.giphy_host <span style="color:#f92672">+</span> <span style="color:#e6db74">&#34;/v1/gifs/random&#34;</span>);
+</span></span><span style="display:flex;"><span>    uri.set_query_from_fields(
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;api_key&#34;</span>, app.giphy_api_key,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;tag&#34;</span>, tag
+</span></span><span style="display:flex;"><span>    );
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Send a request to the endpoint and open up the response
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// stream, wrapping it with a BufferedInputStream to make
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// reading it easier.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">var</span> req <span style="color:#f92672">=</span> app.session.request(uri.to_string(false));
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">var</span> stream <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> BufferedInputStream(
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">yield</span> req.send_async(null)
+</span></span><span style="display:flex;"><span>        );
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Asynchronously read the data from the input stream into
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// a string builder. Later on, this data will need to be
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// parsed as JSON so that we can get a .gif URL from it.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">var</span> result <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> StringBuilder();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">ssize_t</span> size;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">while</span> ((size <span style="color:#f92672">=</span> <span style="color:#66d9ef">yield</span> stream.fill_async(<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>)) <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>            result.append_len((<span style="color:#66d9ef">string</span>)stream.peek_buffer(), size);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Notify the window that a search has completed.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">this</span>.search_end((<span style="color:#66d9ef">string</span>)result.data, null);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">catch</span> (Error error) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">this</span>.search_end(null, error);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>There&rsquo;s a lot going on here, but it&rsquo;s actually not very complicated.
+This code can be thought of as having three parts:</p>
+<ol>
+<li>
+<p>Build the request URI.</p>
+</li>
+<li>
+<p>Send the request and wait for a response.</p>
+</li>
+<li>
+<p>Read the response into a buffer.</p>
+</li>
+</ol>
+<p>Building the URI uses Soup&rsquo;s <code>URI</code> type to add query parameters, which
+is safer and more reliable than simply appending to a string, but is
+otherwise very straightforward.</p>
+<p>Now, note the use of the <code>yield</code> keyword, each one followed by a method
+that ends in <code>_async</code>. Asynchronous Vala code works by running the method
+as normal until it encounters a <code>yield</code>; when it finds one, it calls the
+following method in a way that allows the application to focus on other
+things until that call is complete. It essentially behaves the same as if
+the code were written with manual callbacks, but the callbacks are all
+flattened into a single function, making it as easy to write and reason
+about as if everything was happening synchronously.</p>
+<p>If you run the example code for this part, type in a search term, and hit
+Enter, you should eventually see Giphy&rsquo;s API output in your terminal, while
+the GUI stays 100% responsive to the user.</p>
+<!-- raw HTML omitted -->
+<h1 id="part-iii-decode-download-display">Part III: Decode, Download, Display</h1>
+<p>The previous section left us with an app that should successfully query
+Giphy&rsquo;s API and get a result. The first thing we need to do after that
+is figure out how to use it!</p>
+<p>Like many web services, Giphy&rsquo;s result is serialized as JSON, so reading
+it isn&rsquo;t too tricky; we just need to pull in the <code>json-glib</code> library
+(this code replaces the &ldquo;read the response into a buffer&rdquo; step in the
+previous implementation, right after we retrieve the response stream):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">var</span> parser <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> Json.Parser();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Read the JSON data and extract its root.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">yield</span> parser.load_from_stream_async(stream, null);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">var</span> root <span style="color:#f92672">=</span> parser.get_root().get_object();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Verify that the response status is 200 OK.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">var</span> meta <span style="color:#f92672">=</span> root.get_object_member(<span style="color:#e6db74">&#34;meta&#34;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">var</span> status <span style="color:#f92672">=</span> meta.get_int_member(<span style="color:#e6db74">&#34;status&#34;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (status <span style="color:#f92672">!=</span> <span style="color:#ae81ff">200</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// We received an unexpected response, so report the error.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">this</span>.search_end(
+</span></span><span style="display:flex;"><span>        null,
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">new</span> GiphyError.QUERY(meta.get_string_member(<span style="color:#e6db74">&#34;msg&#34;</span>))
+</span></span><span style="display:flex;"><span>    );
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">var</span> data <span style="color:#f92672">=</span> root.get_member(<span style="color:#e6db74">&#34;data&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Quick sanity check. Giphy returns an empty array if
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// there were no results.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">if</span> (data.get_node_type() <span style="color:#f92672">!=</span> Json.NodeType.OBJECT) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.search_end(null, <span style="color:#66d9ef">new</span> GiphyError.NO_RESULT(<span style="color:#e6db74">&#34;No result.&#34;</span>));
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">var</span> url <span style="color:#f92672">=</span> data.get_object().get_string_member(<span style="color:#e6db74">&#34;image_url&#34;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.search_end(url, null);</span></span></code></pre></div>
+<p>(<a href="https://github.com/Giphy/GiphyAPI#sample-response-random">format</a> of
+the expected response)</p>
+<p>One new thing you&rsquo;ll notice here is the use of a <code>GiphyError</code> type. That&rsquo;s
+quickly and easily defined by creating a new error domain, which is
+essentially Vala&rsquo;s method of creating new Exception types:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * Define a custom error type so that we can report an error if
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * the response doesn&#39;t meet our expectations.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> */</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">errordomain</span> <span style="color:#a6e22e">GiphyError</span> {
+</span></span><span style="display:flex;"><span>	QUERY,
+</span></span><span style="display:flex;"><span>	NO_RESULT
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>Huzzah, now our <code>search_end</code> signal will return the URL to a <code>.gif</code> file!
+There&rsquo;s just a couple things left to do: download it, and display it.</p>
+<h2 id="download-me-a-river">Download Me a River</h2>
+<p>For downloading it, we&rsquo;ll add a couple more signals:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">public</span> <span style="color:#66d9ef">signal</span> <span style="color:#66d9ef">void</span> download_begin(<span style="color:#66d9ef">string</span> url);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">public</span> <span style="color:#66d9ef">signal</span> <span style="color:#66d9ef">void</span> download_progress(<span style="color:#66d9ef">double</span> percent);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">public</span> <span style="color:#66d9ef">signal</span> <span style="color:#66d9ef">void</span> download_end(
+</span></span><span style="display:flex;"><span>    Gdk.PixbufAnimation<span style="color:#f92672">?</span> animation,
+</span></span><span style="display:flex;"><span>    Error<span style="color:#f92672">?</span> error
+</span></span><span style="display:flex;"><span>);</span></span></code></pre></div>
+<p>We&rsquo;re following the exact same pattern as we did before, except this time,
+we&rsquo;ve added a progress signal. Rather than use Soup directly, though, the
+download is going to utilize GIO (GLib&rsquo;s virtual filesystem API),
+which enables progress updates for file transfers, including downloads.
+Since the file is much bigger than the API&rsquo;s JSON response, it&rsquo;s good
+practice to update the user with some concrete percentages as soon as we
+have them available.</p>
+<p>To start, let&rsquo;s define another asynchronous method for fetching the <code>.gif</code>
+(warning: this method is long-ish):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> async <span style="color:#66d9ef">void</span> download_gif(<span style="color:#66d9ef">string</span> url) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.download_begin(url);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">try</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Create a reference to the remote .gif.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">var</span> remote_file <span style="color:#f92672">=</span> GLib.File.new_for_uri(url);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Create a new temp file to download it to. We won&#39;t
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// actually use the iostream, but it needs to be non-null.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        FileIOStream iostream;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">var</span> tmp_file <span style="color:#f92672">=</span> GLib.File.new_tmp(
+</span></span><span style="display:flex;"><span>            <span style="color:#e6db74">&#34;giphy-XXXXXX.gif&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">out</span> iostream
+</span></span><span style="display:flex;"><span>        );
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Asynchronously download the .gif to the temp file.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">yield</span> remote_file.copy_async(
+</span></span><span style="display:flex;"><span>            tmp_file,
+</span></span><span style="display:flex;"><span>            FileCopyFlags.OVERWRITE,
+</span></span><span style="display:flex;"><span>            Priority.DEFAULT,
+</span></span><span style="display:flex;"><span>            null, <span style="color:#75715e">// Cancellable instance
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            (current, total) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">this</span>.download_progress(
+</span></span><span style="display:flex;"><span>                	(<span style="color:#66d9ef">double</span>)current <span style="color:#f92672">/</span> (<span style="color:#66d9ef">double</span>)total
+</span></span><span style="display:flex;"><span>                );
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        );
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// File&#39;s downloaded, read it into memory.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">var</span> stream <span style="color:#f92672">=</span> <span style="color:#66d9ef">yield</span> tmp_file.read_async();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">var</span> image <span style="color:#f92672">=</span> <span style="color:#66d9ef">yield</span> (
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">new</span> Gdk.PixbufAnimation.from_stream_async(stream, null)
+</span></span><span style="display:flex;"><span>        );
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// We now have the result, signal the application!
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">this</span>.download_end(image, null);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// We&#39;re done with the temp file, so delete it.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// Comment this line out if you&#39;d like to keep
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// everything you&#39;ve found while searching!
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// They show up in your sytem temp folder.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">yield</span> tmp_file.<span style="color:#960050;background-color:#1e0010">@</span>delete_async();
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">catch</span> (Error error) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">this</span>.download_end(null, error);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>Again, this looks like a lot, but there&rsquo;s only a couple steps here:</p>
+<ol>
+<li>
+<p>Create a temporary file.</p>
+</li>
+<li>
+<p>Copy the remote <code>.gif</code> into it, signaling progress along the way.</p>
+</li>
+<li>
+<p>Read the temporary file into memory.</p>
+</li>
+</ol>
+<p><em>Note</em>: there is a way to download the <code>.gif</code> directly into program memory,
+which is a little more efficient, but that approach doesn&rsquo;t support monitoring
+the download&rsquo;s progress.</p>
+<p>Last, but not least, we need to put together the interface that will
+listen to all these signals, and show us what we want to see.</p>
+<h2 id="its-gui-time">It&rsquo;s GUI Time</h2>
+<p>We have the data, but it&rsquo;s not going to be very useful unless we can
+show it to someone! It is possible to use a design tool like <a href="https://glade.gnome.org/">Glade</a>
+to help out (and for your bigger, more serious projects, it&rsquo;s a better
+option than what I&rsquo;m doing here), but instead, we&rsquo;re just going to lump
+the whole UI into a single block of code.</p>
+<p>First, let&rsquo;s think about what we need. At its simplest, all we need
+is a search box, a place to put the image, and a place to put the image&rsquo;s
+URL. That corresponds to these widgets:</p>
+<ol>
+<li>
+<p><a href="http://valadoc.org/#!api=gtk+-3.0/Gtk.Entry">Entry</a></p>
+</li>
+<li>
+<p><a href="http://valadoc.org/#!api=gtk+-3.0/Gtk.Image">Image</a></p>
+</li>
+<li>
+<p><a href="http://valadoc.org/#!api=gtk+-3.0/Gtk.Label">Label</a></p>
+</li>
+<li>
+<p><a href="http://valadoc.org/#!api=gtk+-3.0/Gtk.Box">Box</a> (for proper positioning
+of the other widgets)</p>
+</li>
+</ol>
+<p>However, in order to make the app a lot more user-friendly, I&rsquo;m going to
+throw in a couple more:</p>
+<ol start="5">
+<li>
+<p><a href="http://valadoc.org/#!api=gtk+-3.0/Gtk.ProgressBar">ProgressBar</a></p>
+</li>
+<li>
+<p><a href="http://valadoc.org/#!api=gtk+-3.0/Gtk.Stack">Stack</a></p>
+</li>
+</ol>
+<p>The progress bar will be used to display search/download progress, and the
+stack is a layout widget that makes it easy to toggle the UI between
+two or more different states. In this case, we want to replace the image
+with the progress bar when a search is underway.</p>
+<p>First let&rsquo;s define everything we need as instance variables, so that they&rsquo;ll
+be available to the methods that need them:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> Gtk.Entry search_entry;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> Gtk.Stack image_stack;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> Gtk.Image image_view;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> Gtk.Entry image_view_url;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> Gtk.ProgressBar image_view_loading;</span></span></code></pre></div>
+<p>And now, inside the Window constructor (warning: this is a big chunk
+of code, but all it&rsquo;s doing is creating widgets):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#75715e">/* -- Build the UI -- */</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Search Entry
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">this</span>.search_entry <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> Gtk.Entry();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.search_entry.activate.connect(() <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    search_random.activate(<span style="color:#66d9ef">this</span>.search_entry.get_text());
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.search_entry.set_icon_from_icon_name(
+</span></span><span style="display:flex;"><span>    Gtk.EntryIconPosition.PRIMARY,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;search&#34;</span>
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.search_entry.set_icon_from_icon_name(
+</span></span><span style="display:flex;"><span>    Gtk.EntryIconPosition.SECONDARY,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;edit-clear&#34;</span>
+</span></span><span style="display:flex;"><span>);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Clear the field when the &#34;edit-clear&#34; icon is clicked.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">this</span>.search_entry.icon_press.connect((pos, event) <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (pos <span style="color:#f92672">==</span> Gtk.EntryIconPosition.SECONDARY) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">this</span>.search_entry.set_text(<span style="color:#e6db74">&#34;&#34;</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Image and Stack
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">this</span>.image_stack <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> Gtk.Stack();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.image_view <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> Gtk.Image();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.image_view_loading <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> Gtk.ProgressBar();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.image_view_url <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> Gtk.Entry();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.image_view_url.set_property(<span style="color:#e6db74">&#34;editable&#34;</span>, false);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.image_view_url.set_property(<span style="color:#e6db74">&#34;can_focus&#34;</span>, false);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.image_view_loading.set_show_text(true);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">var</span> image_box <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> Gtk.Box(Gtk.Orientation.VERTICAL, <span style="color:#ae81ff">6</span>);
+</span></span><span style="display:flex;"><span>image_box.pack_start(<span style="color:#66d9ef">this</span>.image_view);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">var</span> image_url_box <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> Gtk.Box(Gtk.Orientation.HORIZONTAL, <span style="color:#ae81ff">6</span>);
+</span></span><span style="display:flex;"><span>image_url_box.pack_start(<span style="color:#66d9ef">new</span> Gtk.Label(<span style="color:#e6db74">&#34;URL:&#34;</span>), false, false, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>image_url_box.pack_start(<span style="color:#66d9ef">this</span>.image_view_url);
+</span></span><span style="display:flex;"><span>image_box.pack_start(image_url_box, false, false, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.image_stack.add_named(image_box, <span style="color:#e6db74">&#34;image&#34;</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.image_stack.add_named(<span style="color:#66d9ef">this</span>.image_view_loading, <span style="color:#e6db74">&#34;loading&#34;</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// Main window box
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">var</span> window_box <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> Gtk.Box(Gtk.Orientation.VERTICAL, <span style="color:#ae81ff">6</span>);
+</span></span><span style="display:flex;"><span>window_box.margin <span style="color:#f92672">=</span> <span style="color:#ae81ff">6</span>;
+</span></span><span style="display:flex;"><span>window_box.pack_start(<span style="color:#66d9ef">this</span>.search_entry, false, false, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>window_box.pack_start(<span style="color:#66d9ef">this</span>.image_stack);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.add(window_box);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.show_all();
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.image_stack.set_visible(false);</span></span></code></pre></div>
+<p><em>Phew</em>. A couple things to note:</p>
+<ol>
+<li>
+<p>Icons were added to the search field, and in addition, the value
+of the field should be cleared out when the &ldquo;clear&rdquo; icon is clicked.</p>
+</li>
+<li>
+<p>The URL display also uses an <code>Entry</code>, but has two properties on it
+set so that it behaves as a read-only field.</p>
+</li>
+<li>
+<p>The last line hides the whole stack because we don&rsquo;t want to show
+anything until we&rsquo;ve started searching for our first image.</p>
+</li>
+<li>
+<p>6 is my go-to margin value, but feel free to adjust it to your liking.
+The human interface guidelines have some <a href="https://developer.gnome.org/hig/stable/visual-layout.html.en">suggestions</a> for
+how far apart to place your widgets.</p>
+</li>
+</ol>
+<p>Here&rsquo;s what the result of this looks like:</p>
+<figure class="regular"><img src="/images/gtk-giphy/ui-1.png"/>
+</figure>
+
+<p>Now we can start listening to signals to update everything accordingly!
+From a high level, here&rsquo;s what the app should do, in order of the signal
+calls that we can expect:</p>
+<ol>
+<li>
+<p><code>search_begin</code>: Show the progress bar and animate it to indicate that
+activity is happening.</p>
+</li>
+<li>
+<p><code>search_end</code>: If the search failed, show an error; otherwise, start
+downloading the result.</p>
+</li>
+<li>
+<p><code>download_begin</code>: Update the progress bar&rsquo;s text to show that we&rsquo;re
+downloading, and set its value to 0 (since now we&rsquo;ll have concrete
+progress to show).</p>
+</li>
+<li>
+<p><code>download_progress</code>: Update the progress bar.</p>
+</li>
+<li>
+<p><code>download_end</code>: If the download failed, show an error; otherwise,
+show the image.</p>
+</li>
+</ol>
+<p>In order to avoid putting all of the logic for these events inside the
+<code>Window</code> constructor, let&rsquo;s define some instance methods&hellip;</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> <span style="color:#66d9ef">void</span> on_search_begin(<span style="color:#66d9ef">string</span> tag) {
+</span></span><span style="display:flex;"><span>    ...
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> <span style="color:#66d9ef">void</span> on_search_end(<span style="color:#66d9ef">string</span><span style="color:#f92672">?</span> url, Error<span style="color:#f92672">?</span> error) {
+</span></span><span style="display:flex;"><span>    ...
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> <span style="color:#66d9ef">void</span> on_download_begin(<span style="color:#66d9ef">string</span> url) {
+</span></span><span style="display:flex;"><span>    ...
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> <span style="color:#66d9ef">void</span> on_download_progress(<span style="color:#66d9ef">double</span> percent) {
+</span></span><span style="display:flex;"><span>    ...
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> <span style="color:#66d9ef">void</span> on_download_end(Gdk.PixbufAnimation<span style="color:#f92672">?</span> animation, Error<span style="color:#f92672">?</span> error) {
+</span></span><span style="display:flex;"><span>    ...
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>&hellip;and connect the signals to them (this part inside the <code>Window</code> constructor):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#75715e">/* -- Register Signal Handlers -- */</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.search_begin.connect(<span style="color:#66d9ef">this</span>.on_search_begin);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.search_end.connect(<span style="color:#66d9ef">this</span>.on_search_end);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.download_begin.connect(<span style="color:#66d9ef">this</span>.on_download_begin);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.download_progress.connect(<span style="color:#66d9ef">this</span>.on_download_progress);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">this</span>.download_end.connect(<span style="color:#66d9ef">this</span>.on_download_end);</span></span></code></pre></div>
+<p>For the first part, we want to make a distinction between searching and
+downloading, and when we&rsquo;re searching, we want the progress bar to animate.
+GTK progress bars support two modes of operation: when you know the progress,
+and when you don&rsquo;t. In this case, we won&rsquo;t know the progress until we start
+downloading the image.</p>
+<p>We&rsquo;ll add a new boolean instance variable called <code>searching</code> so that we know when
+a search is underway, and so when to animate the progress bar:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> <span style="color:#66d9ef">void</span> on_search_begin(<span style="color:#66d9ef">string</span> tag) {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Ensure that the image stack is visible.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#66d9ef">this</span>.image_stack.visible) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">this</span>.image_stack.set_visible(true);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Show the &#34;loading&#34; child of the stack; this shows
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// the loading bar and hides the image.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">this</span>.image_stack.set_visible_child_name(<span style="color:#e6db74">&#34;loading&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.image_view_loading.set_text(<span style="color:#e6db74">&#34;Searching...&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.searching <span style="color:#f92672">=</span> true;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    GLib.Timeout.add(<span style="color:#ae81ff">100</span>, () <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">this</span>.image_view_loading.pulse();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">this</span>.searching;
+</span></span><span style="display:flex;"><span>    });
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>Both progress bar modes require that you call a method on the widget periodically. When
+you have a concrete progress value to report, you call <code>set_fraction()</code>,
+providing the progress value to display to the user. But when you just want to
+animate the bar to indicate activity, you call <code>pulse()</code>. How often you call the
+former depends on how frequently you receive updates, and how often you call the latter
+is entirely up to you.</p>
+<p>The best way to periodically call <code>pulse()</code> is to add a new <em>timeout</em> callback. This
+requires providing an interval in milliseconds along with your callback. The callback
+function is invoked periodically, using the provided interval, until it returns <code>false</code>.
+In the example above, the progress bar will pulse until <code>this.searching</code> is set to
+<code>false</code>, which will happen right as we transition to downloading the result. The value
+of 100 means that it will pulse 10 times per second; adjusting the value will result
+in either a faster or slower animation.</p>
+<figure class="regular"><img src="/images/gtk-giphy/progress.gif"/>
+</figure>
+
+<p>Now we wait until the request has completed, and hand off the result to be downloaded
+(omitting error display; check out the full source to see how to display a dialog):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> <span style="color:#66d9ef">void</span> on_search_end(<span style="color:#66d9ef">string</span><span style="color:#f92672">?</span> url, Error<span style="color:#f92672">?</span> error) {
+</span></span><span style="display:flex;"><span>    searching <span style="color:#f92672">=</span> false;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (error <span style="color:#f92672">!=</span> null) {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Display the error and quit early.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        ...
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.download_gif.begin(url);
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>Simple enough. The <code>download_gif()</code> method will take care of emitting the next signal:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> <span style="color:#66d9ef">void</span> on_download_begin(<span style="color:#66d9ef">string</span> url) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.image_view_url.set_text(url);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.image_view_loading.set_text(<span style="color:#e6db74">&#34;Downloading...&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.image_view_loading.set_fraction(<span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>Here we set the URL field to show what we&rsquo;re downloading, and prepare the progress bar
+to switch modes. Calling <code>set_fraction(0)</code> hides the &ldquo;pulse&rdquo; progress bar, since we&rsquo;re
+now going to be periodically updating the fraction value.</p>
+<p>Actually updating the progress bar is almost laughably simple:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> <span style="color:#66d9ef">void</span> on_download_progress(<span style="color:#66d9ef">double</span> percent) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.image_view_loading.set_fraction(percent);
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>There&rsquo;s only one step left, and that&rsquo;s to display the <code>.gif</code> that we&rsquo;ve received.
+For most images, it&rsquo;s enough to call <code>.set_from_pixbuf()</code> or equivalent; but we
+want our image to animate, so there are a couple extra steps. You&rsquo;ll notice that
+the result of the download is a <code>PixbufAnimation</code>, not just a <code>Pixbuf</code>; in order
+to display an animation, we need to iterate through the animation&rsquo;s frames and
+call <code>.set_from_pixbuf()</code> for each one.</p>
+<p>To help out, we need to add one last instance variable:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> Gdk.PixbufAnimationIter gif_iter;</span></span></code></pre></div>
+<p>And finally, here&rsquo;s how we take the result and animate it:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-vala" data-lang="vala"><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> <span style="color:#66d9ef">void</span> on_download_end(
+</span></span><span style="display:flex;"><span>    Gdk.PixbufAnimation<span style="color:#f92672">?</span> animation,
+</span></span><span style="display:flex;"><span>    Error<span style="color:#f92672">?</span> error
+</span></span><span style="display:flex;"><span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (error <span style="color:#f92672">!=</span> null) {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// Display the error and quit early.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        ...
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.gif_iter <span style="color:#f92672">=</span> animation.get_iter(null);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.image_view.set_from_pixbuf(<span style="color:#66d9ef">this</span>.gif_iter.get_pixbuf());
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.image_stack.set_visible_child_name(<span style="color:#e6db74">&#34;image&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span>.animate();
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">protected</span> <span style="color:#66d9ef">void</span> animate() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">var</span> delay <span style="color:#f92672">=</span> <span style="color:#66d9ef">this</span>.gif_iter.get_delay_time();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (delay <span style="color:#f92672">==</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (delay <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">20</span>) delay <span style="color:#f92672">=</span> <span style="color:#ae81ff">20</span>; <span style="color:#75715e">// Minimum value for GIF images.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    GLib.Timeout.add(delay, () <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (<span style="color:#66d9ef">this</span>.gif_iter <span style="color:#f92672">==</span> null) {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> false;
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (<span style="color:#66d9ef">this</span>.gif_iter.advance(null)) {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">this</span>.image_view.set_from_pixbuf(
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">this</span>.gif_iter.get_pixbuf()
+</span></span><span style="display:flex;"><span>            );
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">this</span>.animate();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> false;
+</span></span><span style="display:flex;"><span>    });
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>This code is short, but dense. The callback itself simply creates our iterator
+(freeing any that may already exist, which avoids a memory leak), displays the
+first frame of the image, shows it in the stack, and calls <code>animate()</code>.
+The <code>animate()</code> method works by using the pixbuf&rsquo;s iterator to do a couple things:</p>
+<ol>
+<li>
+<p>Calculate the delay, or how long we need to wait before advancing the image.
+A value of -1 means that the image is static, and shouldn&rsquo;t advance. Also note
+that the GIF image format defines 20 as the minimum delay, so we check for that.</p>
+</li>
+<li>
+<p>Set up a timeout using the delay. This timeout returns <code>false</code>, ensuring that
+it is only invoked once.</p>
+</li>
+<li>
+<p>When the timeout occurs, advance the iterator and, if necessary, update the
+image to use the current pixbuf. Note that we also check to make sure the
+iterator hasn&rsquo;t been deleted before attempting to use it.</p>
+</li>
+<li>
+<p>After advancing, call <code>animate()</code> again to set up for the next frame.</p>
+</li>
+</ol>
+<p>(<em>Note</em>: the <code>on_search_begin()</code> function should now also have a line setting
+<code>this.gif_iter</code> to null, which stops the animation and frees up some resources)</p>
+<p>And that&rsquo;s it!</p>
+<!-- raw HTML omitted -->
+<h1 id="summary">Summary</h1>
+<p>Naturally, there&rsquo;s a lot of room for improvement. Here are some ideas for
+improving the app&rsquo;s functionality:</p>
+<ol>
+<li>
+<p>Add cancellation support. While an API request or download is processing,
+a new search request should abort any pending operations. This can be
+achieved by using the <a href="http://valadoc.org/#!api=gio-2.0/GLib.Cancellable">Cancellable</a> class.</p>
+</li>
+<li>
+<p>Integrate <a href="http://valadoc.org/#!api=gio-2.0/GLib.Settings">Settings</a> for application configuration, so that the
+strings currently hard-coded into the <code>Application</code> class are configurable
+using existing tools. <em>Bonus:</em> create a simple &ldquo;settings&rdquo; dialog for updating
+these directly from your app.</p>
+</li>
+<li>
+<p>Add a <a href="http://valadoc.org/#!api=gtk+-3.0/Gtk.Scale">Scale</a> widget below the image for adjusting playback speed
+by using its value to calculate a <a href="http://valadoc.org/#!api=glib-2.0/GLib.TimeVal">TimeVal</a> that can be passed
+to the iterator&rsquo;s <code>advance()</code> method.</p>
+</li>
+<li>
+<p>This post just covered querying Giphy&rsquo;s &ldquo;random&rdquo; endpoint for images; try
+adding support for more of their endpoints, and add a <a href="http://valadoc.org/#!api=gtk+-3.0/Gtk.ComboBox">ComboBox</a>
+next to the search field for choosing which one to use. <em>Bonus:</em> for endpoints
+that return multiple images, figure out a way to scroll through all of the
+results, downloading each one as it becomes necessary.</p>
+</li>
+</ol>
+<h1 id="further-reading">Further Reading</h1>
+<ol>
+<li>
+<p><a href="http://valadoc.org/">Valadoc</a> for any general-purpose questions about Vala&rsquo;s API&rsquo;s.</p>
+</li>
+<li>
+<p><a href="https://developer.gnome.org/gtk3/stable/ch03.html">Widget Gallery</a>, for checking out the available widgets.</p>
+</li>
+<li>
+<p><a href="https://developer.gnome.org/hig/stable/">Human Interface Guidelines</a>, for solid advice on what constitues a good
+interface.</p>
+</li>
+<li>
+<p><a href="https://developer.gnome.org/">GNOME Developer Center</a>, for many more guides and resources.</p>
+</li>
+</ol>
+<!-- raw HTML omitted -->
+  </div>
+
+    </main>
+
+    
+  </body>
+</html>

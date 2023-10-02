@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-us" lang="en-us">
+<head>
+  <link href="//gmpg.org/xfn/11" rel="profile">
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="generator" content="Hugo 0.115.1">
+
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Amazon Glacier Backups in Bash &middot; Version 7.0</title>
+
+  
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/print.css" media="print">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/poole.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/syntax.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/hyde.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Abril+Fatface|PT+Sans:400,400i,700">
+
+
+  
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="/apple-touch-icon-144-precomposed.png">
+  <link rel="shortcut icon" href="/favicon.png">
+
+  
+  
+</head>
+
+  <body class=" ">
+  <aside class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      <a href="https://damienradtke.com/"><h1>Version 7.0</h1></a>
+      <p class="lead">
+       Fixes many known issues with version 6.0 
+      </p>
+    </div>
+
+    <nav>
+      <ul class="sidebar-nav">
+        <li><a href="https://damienradtke.com/">Home</a> </li>
+        <li><a href="/pages/about"> About </a></li><li><a href="https://github.com/dradtke/"> Projects — Github </a></li><li><a href="https://git.sr.ht/~damien"> Projects — Sourcehut </a></li>
+      </ul>
+    </nav>
+
+    <p>&copy; 2023. All rights reserved. </p>
+  </div>
+</aside>
+
+    <main class="content container">
+    <div class="post">
+    <h1>Amazon Glacier Backups in Bash</h1>
+    
+      <time datetime=2016-03-24T11:46:20-0500 class="post-date">Thu, Mar 24, 2016</time>
+    
+
+    <p>Why use an official Java or .NET-based algorithm when you can write your own
+in Bash? This script uses the AWS CLI tool to back up a file to an Amazon
+Glacier vault, without the need for a heavy runtime.</p>
+<p>Tested on Linux, so YMMV on other systems.</p>
+<p>Requires the AWS CLI tool to be configured appropriately via <code>aws configure</code>.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e">#!/bin/bash
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#75715e">#</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># This script takes a path to a file and uploads it to Amazon</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Glacier. It does this in several steps:</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#    1. Split the file up into 1MiB chunks.</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#    2. Initiate a multipart upload.</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#    3. Upload each part individually.</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#    4. Calculate the file&#39;s tree hash and finish the upload.</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># See: http://amzn.to/1RjTwYk</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Author: Damien Radtke &lt;damienradtke at gmail dot com&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># License: WTFPL</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Set this to the name of the Glacier vault to upload to.</span>
+</span></span><span style="display:flex;"><span>VAULT_NAME<span style="color:#f92672">=</span>...
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 1 MiB in bytes; the tree hash algorithm requires chunks of this</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># size.</span>
+</span></span><span style="display:flex;"><span>CHUNK_SIZE<span style="color:#f92672">=</span><span style="color:#ae81ff">1048576</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> <span style="color:#f92672">[[</span> -z <span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>1<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span> <span style="color:#f92672">]]</span>; <span style="color:#66d9ef">then</span>
+</span></span><span style="display:flex;"><span>    echo <span style="color:#e6db74">&#34;No file provided.&#34;</span>
+</span></span><span style="display:flex;"><span>    exit <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fi</span>
+</span></span><span style="display:flex;"><span>ARCHIVE<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;`realpath </span><span style="color:#e6db74">${</span>1<span style="color:#e6db74">}</span><span style="color:#e6db74">`&#34;</span>
+</span></span><span style="display:flex;"><span>ARCHIVE_SIZE<span style="color:#f92672">=</span><span style="color:#e6db74">`</span>cat <span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>ARCHIVE<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span> | wc --bytes<span style="color:#e6db74">`</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>TEMP<span style="color:#f92672">=</span><span style="color:#e6db74">`</span>mktemp --directory<span style="color:#e6db74">`</span>
+</span></span><span style="display:flex;"><span>cd <span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>TEMP<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Clean up at exit.</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> cleanup <span style="color:#f92672">{</span>
+</span></span><span style="display:flex;"><span>    echo <span style="color:#e6db74">&#34;Cleaning up.&#34;</span>
+</span></span><span style="display:flex;"><span>    cd ~-
+</span></span><span style="display:flex;"><span>    rm -rf <span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>TEMP<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">}</span>
+</span></span><span style="display:flex;"><span>trap cleanup EXIT
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>echo <span style="color:#e6db74">&#34;Initiating multipart upload...&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Split the archive into chunks.</span>
+</span></span><span style="display:flex;"><span>split --bytes<span style="color:#f92672">=</span><span style="color:#e6db74">${</span>CHUNK_SIZE<span style="color:#e6db74">}</span> <span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>ARCHIVE<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span> chunk
+</span></span><span style="display:flex;"><span>NUM_CHUNKS<span style="color:#f92672">=</span><span style="color:#e6db74">`</span>ls chunk* | wc -l<span style="color:#e6db74">`</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Initiate upload.</span>
+</span></span><span style="display:flex;"><span>UPLOAD_ID<span style="color:#f92672">=</span><span style="color:#66d9ef">$(</span>aws glacier initiate-multipart-upload <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    --account-id<span style="color:#f92672">=</span>- <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    --vault-name<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>VAULT_NAME<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    --archive-description<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;`basename \&#34;</span><span style="color:#e6db74">${</span>ARCHIVE<span style="color:#e6db74">}</span><span style="color:#e6db74">\&#34;`&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    --part-size<span style="color:#f92672">=</span><span style="color:#e6db74">${</span>CHUNK_SIZE<span style="color:#e6db74">}</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    --query<span style="color:#f92672">=</span>uploadId | sed <span style="color:#e6db74">&#39;s/&#34;//g&#39;</span><span style="color:#66d9ef">)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>RETVAL<span style="color:#f92672">=</span>$?
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> <span style="color:#f92672">[[</span> <span style="color:#e6db74">${</span>RETVAL<span style="color:#e6db74">}</span> -ne <span style="color:#ae81ff">0</span> <span style="color:#f92672">]]</span>; <span style="color:#66d9ef">then</span>
+</span></span><span style="display:flex;"><span>    echo <span style="color:#e6db74">&#34;initiate-multipart-upload failed with status code: </span><span style="color:#e6db74">${</span>RETVAL<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>    exit <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fi</span>
+</span></span><span style="display:flex;"><span>echo <span style="color:#e6db74">&#34;Upload ID: </span><span style="color:#e6db74">${</span>UPLOAD_ID<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Abort the upload if forced to exit.</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> abort_upload <span style="color:#f92672">{</span>
+</span></span><span style="display:flex;"><span>    echo <span style="color:#e6db74">&#34;Aborting upload.&#34;</span>
+</span></span><span style="display:flex;"><span>    aws glacier abort-multipart-upload <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>        --account-id<span style="color:#f92672">=</span>- <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>        --vault-name<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>VAULT_NAME<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>        --upload-id<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>UPLOAD_ID<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">}</span>
+</span></span><span style="display:flex;"><span>trap abort_upload SIGINT SIGTERM
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Loop through the chunks.</span>
+</span></span><span style="display:flex;"><span>INDEX<span style="color:#f92672">=</span><span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> CHUNK in chunk*; <span style="color:#66d9ef">do</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Calculate the byte range for this chunk.</span>
+</span></span><span style="display:flex;"><span>    START<span style="color:#f92672">=</span><span style="color:#66d9ef">$((</span>INDEX*CHUNK_SIZE<span style="color:#66d9ef">))</span>
+</span></span><span style="display:flex;"><span>    END<span style="color:#f92672">=</span><span style="color:#66d9ef">$((</span><span style="color:#f92672">((</span>INDEX+1<span style="color:#f92672">)*</span>CHUNK_SIZE<span style="color:#f92672">)-</span><span style="color:#ae81ff">1</span><span style="color:#66d9ef">))</span>
+</span></span><span style="display:flex;"><span>    END<span style="color:#f92672">=</span><span style="color:#66d9ef">$((</span>END&gt;<span style="color:#f92672">(</span>ARCHIVE_SIZE-1<span style="color:#f92672">)</span>?ARCHIVE_SIZE-1:END<span style="color:#66d9ef">))</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e"># Increment the index.</span>
+</span></span><span style="display:flex;"><span>    INDEX<span style="color:#f92672">=</span><span style="color:#66d9ef">$((</span>INDEX+1<span style="color:#66d9ef">))</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> true; <span style="color:#66d9ef">do</span>
+</span></span><span style="display:flex;"><span>        echo <span style="color:#e6db74">&#34;Uploading chunk </span><span style="color:#e6db74">${</span>INDEX<span style="color:#e6db74">}</span><span style="color:#e6db74"> / </span><span style="color:#e6db74">${</span>NUM_CHUNKS<span style="color:#e6db74">}</span><span style="color:#e6db74">...&#34;</span>
+</span></span><span style="display:flex;"><span>        aws glacier upload-multipart-part <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>            --account-id<span style="color:#f92672">=</span>- <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>            --vault-name<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>VAULT_NAME<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>            --upload-id<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>UPLOAD_ID<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>            --body<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>CHUNK<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>            --range<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;bytes </span><span style="color:#e6db74">${</span>START<span style="color:#e6db74">}</span><span style="color:#e6db74">-</span><span style="color:#e6db74">${</span>END<span style="color:#e6db74">}</span><span style="color:#e6db74">/*&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>            &gt;/dev/null
+</span></span><span style="display:flex;"><span>        RETVAL<span style="color:#f92672">=</span>$?
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#f92672">[[</span> <span style="color:#e6db74">${</span>RETVAL<span style="color:#e6db74">}</span> -eq <span style="color:#ae81ff">0</span> <span style="color:#f92672">]]</span>; <span style="color:#66d9ef">then</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># Upload succeeded, on to the next one.</span>
+</span></span><span style="display:flex;"><span>            break
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">elif</span> <span style="color:#f92672">[[</span> <span style="color:#e6db74">${</span>RETVAL<span style="color:#e6db74">}</span> -eq <span style="color:#ae81ff">130</span> <span style="color:#f92672">]]</span>; <span style="color:#66d9ef">then</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># Received a SIGINT.</span>
+</span></span><span style="display:flex;"><span>            exit <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">elif</span> <span style="color:#f92672">[[</span> <span style="color:#e6db74">${</span>RETVAL<span style="color:#e6db74">}</span> -eq <span style="color:#ae81ff">255</span> <span style="color:#f92672">]]</span>; <span style="color:#66d9ef">then</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#75715e"># Most likely a timeout, just let it try again.</span>
+</span></span><span style="display:flex;"><span>            echo <span style="color:#e6db74">&#34;Chunk </span><span style="color:#e6db74">${</span>INDEX<span style="color:#e6db74">}</span><span style="color:#e6db74"> ran into an error, retrying...&#34;</span>
+</span></span><span style="display:flex;"><span>            sleep <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">else</span>
+</span></span><span style="display:flex;"><span>            echo <span style="color:#e6db74">&#34;upload-multipart-part failed with status code: </span><span style="color:#e6db74">${</span>RETVAL<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>            echo <span style="color:#e6db74">&#34;Aborting upload.&#34;</span>
+</span></span><span style="display:flex;"><span>            aws glacier abort-multipart-upload <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>                --account-id<span style="color:#f92672">=</span>- <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>                --vault-name<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>VAULT_NAME<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>                --upload-id<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>UPLOAD_ID<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>            exit <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">fi</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">done</span>
+</span></span><span style="display:flex;"><span>    openssl dgst -sha256 -binary <span style="color:#e6db74">${</span>CHUNK<span style="color:#e6db74">}</span> &gt; <span style="color:#e6db74">&#34;hash</span><span style="color:#e6db74">${</span>CHUNK:5<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">done</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Calculate tree hash.</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># (&#34;And now for the tricky bit.&#34;)</span>
+</span></span><span style="display:flex;"><span>echo <span style="color:#e6db74">&#34;Calculating tree hash...&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">while</span> true; <span style="color:#66d9ef">do</span>
+</span></span><span style="display:flex;"><span>    COUNT<span style="color:#f92672">=</span><span style="color:#e6db74">`</span>ls hash* | wc -l<span style="color:#e6db74">`</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#f92672">[[</span> <span style="color:#e6db74">${</span>COUNT<span style="color:#e6db74">}</span> -le <span style="color:#ae81ff">2</span> <span style="color:#f92672">]]</span>; <span style="color:#66d9ef">then</span>
+</span></span><span style="display:flex;"><span>        TREE_HASH<span style="color:#f92672">=</span><span style="color:#66d9ef">$(</span>cat hash* | openssl dgst -sha256 | awk <span style="color:#e6db74">&#39;{print $2}&#39;</span><span style="color:#66d9ef">)</span>
+</span></span><span style="display:flex;"><span>        break
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">fi</span>
+</span></span><span style="display:flex;"><span>    ls hash* | xargs -n <span style="color:#ae81ff">2</span> | <span style="color:#66d9ef">while</span> read PAIR; <span style="color:#66d9ef">do</span>
+</span></span><span style="display:flex;"><span>        PAIRARRAY<span style="color:#f92672">=(</span><span style="color:#e6db74">${</span>PAIR<span style="color:#e6db74">}</span><span style="color:#f92672">)</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#f92672">[[</span> <span style="color:#e6db74">${#</span>PAIRARRAY[@]<span style="color:#e6db74">}</span> -eq <span style="color:#ae81ff">1</span> <span style="color:#f92672">]]</span>; <span style="color:#66d9ef">then</span>
+</span></span><span style="display:flex;"><span>            break
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">fi</span>
+</span></span><span style="display:flex;"><span>        cat <span style="color:#e6db74">${</span>PAIR<span style="color:#e6db74">}</span> | openssl dgst -sha256 -binary &gt; temphash
+</span></span><span style="display:flex;"><span>        rm <span style="color:#e6db74">${</span>PAIR<span style="color:#e6db74">}</span>
+</span></span><span style="display:flex;"><span>        mv temphash <span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>PAIRARRAY[0]<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">done</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">done</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>echo <span style="color:#e6db74">&#34;Finalizing...&#34;</span>
+</span></span><span style="display:flex;"><span>aws glacier complete-multipart-upload <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    --account-id<span style="color:#f92672">=</span>- <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    --vault-name<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>VAULT_NAME<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    --upload-id<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>UPLOAD_ID<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    --checksum<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>TREE_HASH<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    --archive-size<span style="color:#f92672">=</span><span style="color:#e6db74">${</span>ARCHIVE_SIZE<span style="color:#e6db74">}</span>
+</span></span><span style="display:flex;"><span>RETVAL<span style="color:#f92672">=</span>$?
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> <span style="color:#f92672">[[</span> <span style="color:#e6db74">${</span>RETVAL<span style="color:#e6db74">}</span> -ne <span style="color:#ae81ff">0</span> <span style="color:#f92672">]]</span>; <span style="color:#66d9ef">then</span>
+</span></span><span style="display:flex;"><span>    echo <span style="color:#e6db74">&#34;complete-multipart-upload failed with status code: </span><span style="color:#e6db74">${</span>RETVAL<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>    echo <span style="color:#e6db74">&#34;Aborting upload </span><span style="color:#e6db74">${</span>UPLOAD_ID<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>    aws glacier abort-multipart-upload <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>        --account-id<span style="color:#f92672">=</span>- <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>        --vault-name<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>VAULT_NAME<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>        --upload-id<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>UPLOAD_ID<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>
+</span></span><span style="display:flex;"><span>    exit <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fi</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>echo <span style="color:#e6db74">&#34;Done.&#34;</span>
+</span></span><span style="display:flex;"><span>exit <span style="color:#ae81ff">0</span></span></span></code></pre></div>
+  </div>
+
+    </main>
+
+    
+  </body>
+</html>

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-us" lang="en-us">
+<head>
+  <link href="//gmpg.org/xfn/11" rel="profile">
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="generator" content="Hugo 0.115.1">
+
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Running this Blog on Nomad &middot; Version 7.0</title>
+
+  
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/print.css" media="print">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/poole.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/syntax.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/hyde.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Abril+Fatface|PT+Sans:400,400i,700">
+
+
+  
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="/apple-touch-icon-144-precomposed.png">
+  <link rel="shortcut icon" href="/favicon.png">
+
+  
+  
+</head>
+
+  <body class=" ">
+  <aside class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      <a href="https://damienradtke.com/"><h1>Version 7.0</h1></a>
+      <p class="lead">
+       Fixes many known issues with version 6.0 
+      </p>
+    </div>
+
+    <nav>
+      <ul class="sidebar-nav">
+        <li><a href="https://damienradtke.com/">Home</a> </li>
+        <li><a href="/pages/about"> About </a></li><li><a href="https://github.com/dradtke/"> Projects — Github </a></li><li><a href="https://git.sr.ht/~damien"> Projects — Sourcehut </a></li>
+      </ul>
+    </nav>
+
+    <p>&copy; 2023. All rights reserved. </p>
+  </div>
+</aside>
+
+    <main class="content container">
+    <div class="post">
+    <h1>Running this Blog on Nomad</h1>
+    
+      <time datetime=2019-11-12T00:00:00Z class="post-date">Tue, Nov 12, 2019</time>
+    
+
+    <p>In an attempt to consolidate my various personal projects, and to be efficient
+about how much money I spend on VPS hosting, this blog is now running on my tiny
+Nomad cluster. The ID for this allocation is:</p>
+<p><!-- raw HTML omitted -->
+<!-- raw HTML omitted --></p>
+<p>The components involved are:</p>
+<ol>
+<li><a href="https://www.nomadproject.io/">Nomad</a></li>
+<li><a href="https://www.consul.io/">Consul</a></li>
+<li><a href="https://www.vaultproject.io/">Vault</a></li>
+<li><a href="https://fabiolb.net/">Fabio</a></li>
+<li><a href="https://github.com/cloudflare/cfssl#the-multirootca">multirootca</a></li>
+</ol>
+<p>The Nomad deployment guide recommends either <a href="https://www.nomadproject.io/docs/internals/consensus.html#deployment-table">three or
+five</a>
+servers, but I&rsquo;m not really running business-critical applications, so I
+currently only have one server and one client node.</p>
+<p>The <code>server</code> node is running one instance each of Consul, Nomad, and Vault, the
+first two in server mode, with certificate authorities defined on a central
+<code>support</code> server.</p>
+<p>I save all of the config files in my
+<a href="https://git.sr.ht/~damien/infrastructure">infrastructure</a> repo. In particular,
+these job files are responsible for running this blog:</p>
+<ol>
+<li><a href="https://git.sr.ht/~damien/infrastructure/tree/master/jobs/damienradtkecom.nomad">damienradtkecom.nomad</a> (Hugo server)</li>
+<li><a href="https://git.sr.ht/~damien/infrastructure/tree/master/jobs/fabio.nomad">fabio.nomad</a> (load balancer)</li>
+<li><a href="https://git.sr.ht/~damien/infrastructure/tree/master/jobs/acme-renewer.nomad">acme-renewer.nomad</a> (certificate renewer periodic batch job)</li>
+</ol>
+<h3 id="damienradtkecom">damienradtkecom</h3>
+<p>This job is responsible for running <code>hugo server</code> on the blog&rsquo;s source
+directory. It specifies the service tag expected by Fabio so that requests to
+<code>damienradtke.com</code> get routed to the blog server.</p>
+<p>It also runs two instances and specifies an <code>update</code> block to ensure
+zero-downtime deployments.</p>
+<h3 id="fabio">fabio</h3>
+<p>This job runs the Fabio load balancer on a randomly-assigned port so that it
+doesn&rsquo;t require root privileges, along with a custom, tiny Go program running as
+root that routes traffic from port 443 to Fabio.</p>
+<p>One upside to having only one client node is that the domain&rsquo;s A record can be
+set to the client node&rsquo;s IP address, so traffic will properly make its way to
+fabio. In case of a multi-client cluster, one node will need to be designated
+the load balancer node, and the fabio job configured to always run on it.</p>
+<h3 id="acme-renewer">acme-renewer</h3>
+<p>This is a periodic batch job that uses <code>acme.sh</code> to renew the domain&rsquo;s SSL
+certificate using a DNS challenge and the Linode API. The results are stored in
+Vault&rsquo;s KV store, which Fabio is configured to read from to support HTTPS.</p>
+
+  </div>
+
+    </main>
+
+    
+  </body>
+</html>

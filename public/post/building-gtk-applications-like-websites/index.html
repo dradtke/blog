@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-us" lang="en-us">
+<head>
+  <link href="//gmpg.org/xfn/11" rel="profile">
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="generator" content="Hugo 0.115.1">
+
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Building GTK4 Applications Like Websites &middot; Version 7.0</title>
+
+  
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/print.css" media="print">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/poole.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/syntax.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/hyde.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Abril+Fatface|PT+Sans:400,400i,700">
+
+
+  
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="/apple-touch-icon-144-precomposed.png">
+  <link rel="shortcut icon" href="/favicon.png">
+
+  
+  
+</head>
+
+  <body class=" ">
+  <aside class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      <a href="https://damienradtke.com/"><h1>Version 7.0</h1></a>
+      <p class="lead">
+       Fixes many known issues with version 6.0 
+      </p>
+    </div>
+
+    <nav>
+      <ul class="sidebar-nav">
+        <li><a href="https://damienradtke.com/">Home</a> </li>
+        <li><a href="/pages/about"> About </a></li><li><a href="https://github.com/dradtke/"> Projects — Github </a></li><li><a href="https://git.sr.ht/~damien"> Projects — Sourcehut </a></li>
+      </ul>
+    </nav>
+
+    <p>&copy; 2023. All rights reserved. </p>
+  </div>
+</aside>
+
+    <main class="content container">
+    <div class="post">
+    <h1>Building GTK4 Applications Like Websites</h1>
+    
+      <time datetime=2022-05-24T00:00:00Z class="post-date">Tue, May 24, 2022</time>
+    
+
+    <figure class="regular"><img src="https://imgs.xkcd.com/comics/installing.png"/>
+</figure>
+
+<p>The modern web, broadly, consists of two distinct innovations:</p>
+<ol>
+<li>The technology for <strong>rendering</strong> and <strong>interacting</strong> with web pages (also known as the trifecta
+of HTML, CSS, and JavaScript)</li>
+<li>The client-server <strong>deployment model</strong>, which allows a single desktop application (your web
+browser) to alter its behavior using instructions sent over the network by a web server</li>
+</ol>
+<p>Whether you love it or hate it, web rendering and interaction technology is widely used, both on the
+web and off. Electron and React Native take the web technology stack and deploy it to your desktop
+or phone, respectively, as a standalone application that don&rsquo;t require a (separate) browser.</p>
+<p>By contrast, the client-server deployment model is not widely used outside of the web in which it
+originated. Desktop application stacks, such as GTK (which is the focus of this post), only run on
+the client.</p>
+<p>In this post, I want to demonstrate a technique for building GTK applications like they were
+websites, using the client-server deployment model.</p>
+<p>(Full source code for the prototype, along with examples, can be seen at
+<a href="https://github.com/dradtke/gtk-webby">https://github.com/dradtke/gtk-webby</a>)</p>
+<h2 id="but-why">&hellip;but why?</h2>
+<p>Mainly because web browsers are, first and foremost, document renderers; their role as application
+runtimes came much later. JavaScript was famously invented by Brendan Eich in just <a href="https://thenewstack.io/brendan-eich-on-creating-javascript-in-10-days-and-what-hed-do-differently-today/">10
+days</a>,
+and the rate at which new frameworks are released has caused many developers to suffer from
+<a href="https://auth0.com/blog/how-to-manage-javascript-fatigue/">JavaScript fatigue</a>. This deluge of
+frontend frameworks largely stems from browsers being designed back in the 90&rsquo;s to do one thing, and
+now being used to do so much more. By contrast, development stacks such as GTK were designed to run
+applications from the start, and as a result, come with many useful features that web applications
+need to either build from scratch, or import from a third-party library.</p>
+<p>However, GTK applications lack the web&rsquo;s flexibility. When an update is made to a GTK application,
+all users need to download the update and install it; when an update is made to a web application,
+it does not require any installation, and the changes are immediately available for all possible
+clients (after a refresh, of course).</p>
+<p>Also, GTK already has support for markup-based rendering in the form of UI files, so we don&rsquo;t have
+to build any of the rendering from scratch. This vastly simplifies the work involved, and means that
+the task is mostly one of gluing together existing components, rather than building something new.</p>
+<h2 id="so-youre-basically-building-a-new-browser">So you&rsquo;re basically building a new browser?</h2>
+<p>Kind of. The goal is to have users download a single application that behaves similarly to
+browsers, but one that instead renders native GTK interfaces rather than HTML.</p>
+<p>(It is worth noting that GTK does support <a href="https://docs.gtk.org/gtk4/broadway.html">broadway</a>, which
+allows you to access a running application remotely through your browser, but in this post I want to
+explore the possibility of building client-server applications with fully native GTK)</p>
+<p>So, that&rsquo;s the goal. In order to get there, we need to break it down into (some of) the individual
+features provided by your average web browser:</p>
+<ol>
+<li><a href="#rendering">Rendering</a></li>
+<li><a href="#scripting">Scripting</a></li>
+<li><a href="#linking">Linking</a></li>
+<li><a href="#styling">Styling</a></li>
+<li><a href="#submitting-forms">Submitting Forms</a></li>
+<li><a href="#page-title">Page Title</a></li>
+</ol>
+<p>After that, I&rsquo;ll end on</p>
+<ol start="7">
+<li><a href="#missing-features">Missing Features</a></li>
+<li><a href="#final-thoughts">Final Thoughts</a></li>
+</ol>
+<h1 id="rendering">Rendering</h1>
+<p>The most basic, fundamental feature we need is the ability to render an application. In order to do
+that, we first need a canvas:</p>
+<figure class="regular"><img src="/images/building-gtk-applications-like-websites/webby.png"/>
+</figure>
+
+<p>This is Webby, the current name of my proof-of-concept, built with <a href="https://gtk-rs.org/">gtk-rs</a>.</p>
+<p>When you first launch it, it doesn&rsquo;t look like much, but that&rsquo;s because it&rsquo;s an empty shell. In
+order to get it to do something, we need to also build a web application that we can access.</p>
+<p>Sticking with our Rust theme, we can build one pretty quickly using Rocket:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-rust" data-lang="rust"><span style="display:flex;"><span><span style="color:#75715e">#[macro_use]</span> <span style="color:#66d9ef">extern</span> <span style="color:#66d9ef">crate</span> rocket;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[get(</span><span style="color:#e6db74">&#34;/&#34;</span><span style="color:#75715e">)]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">index</span>() -&gt; <span style="color:#66d9ef">&amp;</span>&#39;static <span style="color:#66d9ef">str</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#e6db74">r</span><span style="color:#e6db74">#&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        &lt;?xml version=&#34;1.0&#34; encoding=&#34;UTF-8&#34;?&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        &lt;interface&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">            &lt;object class=&#34;GtkBox&#34; id=&#34;body&#34;&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">                &lt;property name=&#34;orientation&#34;&gt;vertical&lt;/property&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">                &lt;property name=&#34;halign&#34;&gt;start&lt;/property&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">                &lt;child&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">                    &lt;object class=&#34;GtkButton&#34;&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">                        &lt;property name=&#34;label&#34;&gt;Click Me&lt;/property&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">                    &lt;/object&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">                &lt;/child&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">            &lt;/object&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        &lt;/interface&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    &#34;#</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#[launch]</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">rocket</span>() -&gt; <span style="color:#a6e22e">_</span> {
+</span></span><span style="display:flex;"><span>    rocket::build().mount(<span style="color:#e6db74">&#34;/&#34;</span>, routes![index])
+</span></span><span style="display:flex;"><span>        .configure(rocket::Config{
+</span></span><span style="display:flex;"><span>            port: <span style="color:#ae81ff">8000</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">..</span>Default::default()
+</span></span><span style="display:flex;"><span>        })
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>With this running, we can now navigate to <code>http://localhost:8000/</code> and see what we get:</p>
+<figure class="regular"><img src="/images/building-gtk-applications-like-websites/webby-hello.png"/>
+</figure>
+
+<p>In a nutshell, here is what&rsquo;s happening:</p>
+<ol>
+<li>We are making a GET request to <code>http://localhost:8000/</code>, which returns the user interface
+definition returned by our Rocket application.</li>
+<li>The body of the request is parsed by a GTK
+<a href="https://docs.gtk.org/gtk4/class.Builder.html">Builder</a>, which will instantiate all of the
+described objects.</li>
+<li>We look for a <a href="https://docs.gtk.org/gtk4/class.Widget.html">Widget</a> object with id <code>body</code> (here
+it is an instance of <a href="https://docs.gtk.org/gtk4/class.Box.html">Box</a>).</li>
+<li>That <code>body</code> widget is set as the child of Webby&rsquo;s content area, which is simply a
+<a href="https://docs.gtk.org/gtk4/class.ScrolledWindow.html">ScrolledWindow</a> instance.</li>
+</ol>
+<p>GTK Builders are very powerful, so this is all that we need in order to properly render an interface
+of basically arbitrary complexity. By using <a href="https://glade.gnome.org/">Glade</a>, you can pretty
+quickly build fairly complex interfaces, and anything contained within a <code>body</code> widget will be
+rendered by Webby.</p>
+<p>EDIT: Apparently Glade is <a href="https://blogs.gnome.org/christopherdavis/2020/11/19/glade-not-recommended/">not
+recommended</a> and will
+likely not support GTK4. Its replacement is called
+<a href="https://flathub.org/apps/details/ar.xjuan.Cambalache">Cambalache</a>, though it is still experimental
+so your results may vary. A lot of GNOME developers appear to simply write Builder XML by hand,
+at least until the tooling in this space stabilizes.</p>
+<p>In order to really do something with this, we need to introduce some additional features.</p>
+<h1 id="scripting">Scripting</h1>
+<p>Continuing with the example above, in order for the button to do anything, we need to handle its
+<code>clicked</code> signal.</p>
+<p>The Builder way of doing this would be to define a <code>&lt;signal&gt;</code>
+<a href="https://docs.gtk.org/gtk4/class.Builder.html#signal-handlers-and-function-pointers">element</a>, but
+that requires that your handler be defined within the application, and frankly I&rsquo;m not sure how that
+works when not using GTK&rsquo;s native C.</p>
+<p>The web&rsquo;s solution here is to introduce scripting (where JavaScript comes in), which allows the web
+server to specify client-side behavior. We can do something similar by bringing in an embeddable
+scripting language. I&rsquo;ve chosen Lua because it&rsquo;s relatively simple and easy to embed, though Webby
+theoretically can support other languages too, even
+<a href="https://github.com/denoland/rusty_v8">JavaScript</a> itself if you really want to.</p>
+<p>Now, the big caveat here is that the GTK UI interface format was not designed to support scripting,
+or frankly to mimic the web. So in order to support scripting, we will need to &ldquo;extend&rdquo; the format
+to support what we need.</p>
+<p>For reference, in order to run a script on a regular web page, you could put a tag like this in your
+HTML:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-html" data-lang="html"><span style="display:flex;"><span>&lt;<span style="color:#f92672">script</span> <span style="color:#a6e22e">type</span><span style="color:#f92672">=</span><span style="color:#e6db74">&#34;text/javascript&#34;</span>&gt;
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">console</span>.<span style="color:#a6e22e">log</span>(<span style="color:#e6db74">&#34;hello world&#34;</span>);
+</span></span><span style="display:flex;"><span>&lt;/<span style="color:#f92672">script</span>&gt;
+</span></span></code></pre></div><p>The approach taken by Webby is very similar:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-xml" data-lang="xml"><span style="display:flex;"><span><span style="color:#f92672">&lt;web:script</span> <span style="color:#a6e22e">type=</span><span style="color:#e6db74">&#34;lua&#34;</span><span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>  print(&#34;hello world&#34;)
+</span></span><span style="display:flex;"><span><span style="color:#f92672">&lt;/web:script&gt;</span>
+</span></span></code></pre></div><p>There are a couple key differences here:</p>
+<ol>
+<li>Webby uses a <code>web:</code> prefix to identify tags that are considered extensions to the UI format. When
+loading an interface description, Webby will strip out any tag with this prefix before passing it
+to the Builder, since it will throw an error when it encounters an unrecognized tag. There are a
+few supported <code>web:</code> tags (more on that later), and <code>web:script</code> is used to indicate the presence
+of a script that should be executed.</li>
+<li>The <code>type</code> attribute is required, and specifies the name of the scripting language in a plain,
+non-MIME format. Only <code>lua</code> is supported, but this provides an easy extension point for adding
+new languages.</li>
+</ol>
+<p>Using this capability, here is how we might connect a signal handler to our button:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-xml" data-lang="xml"><span style="display:flex;"><span><span style="color:#75715e">&lt;?xml version=&#34;1.0&#34; encoding=&#34;UTF-8&#34;?&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">&lt;interface&gt;</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">&lt;!-- Script tags can be placed anywhere, so why not at the top? --&gt;</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#f92672">&lt;web:script</span> <span style="color:#a6e22e">type=</span><span style="color:#e6db74">&#34;lua&#34;</span><span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>	  button = find_widget(&#34;click-me&#34;)
+</span></span><span style="display:flex;"><span>	  button:connect(&#34;clicked&#34;, false, function()
+</span></span><span style="display:flex;"><span>	  	alert(&#34;hello world&#34;)
+</span></span><span style="display:flex;"><span>	  end)
+</span></span><span style="display:flex;"><span>	<span style="color:#f92672">&lt;/web:script&gt;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&lt;object</span> <span style="color:#a6e22e">class=</span><span style="color:#e6db74">&#34;GtkBox&#34;</span> <span style="color:#a6e22e">id=</span><span style="color:#e6db74">&#34;body&#34;</span><span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&lt;property</span> <span style="color:#a6e22e">name=</span><span style="color:#e6db74">&#34;orientation&#34;</span><span style="color:#f92672">&gt;</span>vertical<span style="color:#f92672">&lt;/property&gt;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&lt;property</span> <span style="color:#a6e22e">name=</span><span style="color:#e6db74">&#34;halign&#34;</span><span style="color:#f92672">&gt;</span>start<span style="color:#f92672">&lt;/property&gt;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&lt;child&gt;</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&lt;object</span> <span style="color:#a6e22e">class=</span><span style="color:#e6db74">&#34;GtkButton&#34;</span> <span style="color:#a6e22e">id=</span><span style="color:#e6db74">&#34;click-me&#34;</span><span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>                <span style="color:#f92672">&lt;property</span> <span style="color:#a6e22e">name=</span><span style="color:#e6db74">&#34;label&#34;</span><span style="color:#f92672">&gt;</span>Click Me<span style="color:#f92672">&lt;/property&gt;</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&lt;/object&gt;</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&lt;/child&gt;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&lt;/object&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">&lt;/interface&gt;</span>
+</span></span></code></pre></div><p>Now when we click the button, we get this:</p>
+<figure class="regular"><img src="/images/building-gtk-applications-like-websites/alert.png"/>
+</figure>
+
+<p>Neat! In order to facilitate this, we need to initialize the Lua virtual machine with a few things:</p>
+<ol>
+<li>Two global functions: <code>alert()</code> and <code>find_widget()</code>.</li>
+<li>A custom <code>Widget</code> user data type, which is returned by <code>find_widget()</code>.</li>
+<li>A <code>connect()</code> method on the <code>Widget</code> type.</li>
+</ol>
+<p>Other functions are available as well (notably <code>widget:get_property()</code> and <code>widget:set_property()</code>),
+so there&rsquo;s quite a bit of flexibility in what you can do.</p>
+<h1 id="linking">Linking</h1>
+<p>One common, but simple feature supported by websites is the ability to link to other pages. In order
+to support that use-case, Webby adds support for a custom attribute for buttons (and theoretically,
+any widget that supports the <code>clicked</code> signal):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-xml" data-lang="xml"><span style="display:flex;"><span><span style="color:#f92672">&lt;object</span> <span style="color:#a6e22e">class=</span><span style="color:#e6db74">&#34;GtkButton&#34;</span> <span style="color:#a6e22e">web:href=</span><span style="color:#e6db74">&#34;/about&#34;</span><span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#f92672">&lt;property</span> <span style="color:#a6e22e">name=</span><span style="color:#e6db74">&#34;label&#34;</span><span style="color:#f92672">&gt;</span>About<span style="color:#f92672">&lt;/property&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">&lt;/object&gt;</span>
+</span></span></code></pre></div><p>The <code>web:href</code> attribute specifies a URL, either relative or absolute, and will tell Webby to
+automatically configure a <code>clicked</code> signal handler that will tell Webby to navigate to the requested
+URL.</p>
+<h1 id="styling">Styling</h1>
+<p>Just like the web, GTK supports CSS <a href="https://docs.gtk.org/gtk4/css-overview.html">natively</a>, so all
+we need to do to enable styling is extend the UI format to support it.</p>
+<p>This example introduces the <code>web:style</code> tag, which contains CSS code to apply to the interface:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-xml" data-lang="xml"><span style="display:flex;"><span><span style="color:#75715e">&lt;?xml version=&#34;1.0&#34; encoding=&#34;UTF-8&#34;?&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">&lt;interface&gt;</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">&lt;!-- This tag contains CSS styles to apply to the rendered
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	     application. --&gt;</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#f92672">&lt;web:style&gt;</span>
+</span></span><span style="display:flex;"><span>		#body {
+</span></span><span style="display:flex;"><span>			font-size: x-large;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		.red {
+</span></span><span style="display:flex;"><span>			color: shade(red, 1.6);
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		.blue {
+</span></span><span style="display:flex;"><span>			color: shade(blue, 1.6);
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	<span style="color:#f92672">&lt;/web:style&gt;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#f92672">&lt;object</span> <span style="color:#a6e22e">class=</span><span style="color:#e6db74">&#34;GtkBox&#34;</span> <span style="color:#a6e22e">id=</span><span style="color:#e6db74">&#34;body&#34;</span><span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#f92672">&lt;property</span> <span style="color:#a6e22e">name=</span><span style="color:#e6db74">&#34;orientation&#34;</span><span style="color:#f92672">&gt;</span>vertical<span style="color:#f92672">&lt;/property&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#f92672">&lt;property</span> <span style="color:#a6e22e">name=</span><span style="color:#e6db74">&#34;halign&#34;</span><span style="color:#f92672">&gt;</span>start<span style="color:#f92672">&lt;/property&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#f92672">&lt;property</span> <span style="color:#a6e22e">name=</span><span style="color:#e6db74">&#34;name&#34;</span><span style="color:#f92672">&gt;</span>body<span style="color:#f92672">&lt;/property&gt;</span> <span style="color:#75715e">&lt;!-- the &#39;name&#39; property defines the CSS ID --&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#f92672">&lt;child&gt;</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#f92672">&lt;object</span> <span style="color:#a6e22e">class=</span><span style="color:#e6db74">&#34;GtkLabel&#34;</span><span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>				<span style="color:#f92672">&lt;style&gt;&lt;class</span> <span style="color:#a6e22e">name=</span><span style="color:#e6db74">&#34;red&#34;</span><span style="color:#f92672">/&gt;&lt;/style&gt;</span>
+</span></span><span style="display:flex;"><span>				<span style="color:#f92672">&lt;property</span> <span style="color:#a6e22e">name=</span><span style="color:#e6db74">&#34;label&#34;</span><span style="color:#f92672">&gt;</span>This line is red,<span style="color:#f92672">&lt;/property&gt;</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#f92672">&lt;/object&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#f92672">&lt;/child&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#f92672">&lt;child&gt;</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#f92672">&lt;object</span> <span style="color:#a6e22e">class=</span><span style="color:#e6db74">&#34;GtkLabel&#34;</span><span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>				<span style="color:#f92672">&lt;style&gt;&lt;class</span> <span style="color:#a6e22e">name=</span><span style="color:#e6db74">&#34;blue&#34;</span><span style="color:#f92672">/&gt;&lt;/style&gt;</span>
+</span></span><span style="display:flex;"><span>				<span style="color:#f92672">&lt;property</span> <span style="color:#a6e22e">name=</span><span style="color:#e6db74">&#34;label&#34;</span><span style="color:#f92672">&gt;</span>and this one is blue!<span style="color:#f92672">&lt;/property&gt;</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#f92672">&lt;/object&gt;</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#f92672">&lt;/child&gt;</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#f92672">&lt;/object&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">&lt;/interface&gt;</span>
+</span></span></code></pre></div><p>Here is the rendered result:</p>
+<figure class="regular"><img src="/images/building-gtk-applications-like-websites/styling.png"/>
+</figure>
+
+<p>For more information on the specific properties used here, see the CSS property
+<a href="https://docs.gtk.org/gtk4/css-properties.html">documentation</a>.</p>
+<p><strong>Note</strong>: The <code>id</code> object attribute defines the object ID for Builder access, but it does <em>not</em>
+actually define the ID for styling. That is actually handled instead by the
+<a href="https://docs.gtk.org/gtk4/property.Widget.name.html">name</a> property. For consistency, the Builder&rsquo;s
+ID and the widget name are set to the same value, <code>body</code>, but they are separate concepts and are
+used for different things.</p>
+<h1 id="submitting-forms">Submitting Forms</h1>
+<p>Forms are a little trickier to introduce to the UI definition. Here is a short example of how you
+would build a web form in a browser:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-html" data-lang="html"><span style="display:flex;"><span><span style="color:#75715e">&lt;!-- Example of a simple form in a web browser using HTML --&gt;</span>
+</span></span><span style="display:flex;"><span>&lt;<span style="color:#f92672">form</span> <span style="color:#a6e22e">method</span><span style="color:#f92672">=</span><span style="color:#e6db74">&#34;POST&#34;</span>&gt;
+</span></span><span style="display:flex;"><span>  &lt;<span style="color:#f92672">input</span> <span style="color:#a6e22e">type</span><span style="color:#f92672">=</span><span style="color:#e6db74">&#34;text&#34;</span> <span style="color:#a6e22e">name</span><span style="color:#f92672">=</span><span style="color:#e6db74">&#34;username&#34;</span> <span style="color:#a6e22e">placeholder</span><span style="color:#f92672">=</span><span style="color:#e6db74">&#34;username&#34;</span>&gt;
+</span></span><span style="display:flex;"><span>  &lt;<span style="color:#f92672">input</span> <span style="color:#a6e22e">type</span><span style="color:#f92672">=</span><span style="color:#e6db74">&#34;password&#34;</span> <span style="color:#a6e22e">name</span><span style="color:#f92672">=</span><span style="color:#e6db74">&#34;password&#34;</span> <span style="color:#a6e22e">placeholder</span><span style="color:#f92672">=</span><span style="color:#e6db74">&#34;password&#34;</span>&gt;
+</span></span><span style="display:flex;"><span>  &lt;<span style="color:#f92672">input</span> <span style="color:#a6e22e">type</span><span style="color:#f92672">=</span><span style="color:#e6db74">&#34;submit&#34;</span> <span style="color:#a6e22e">value</span><span style="color:#f92672">=</span><span style="color:#e6db74">&#34;Log In&#34;</span>&gt;
+</span></span><span style="display:flex;"><span>&lt;/<span style="color:#f92672">form</span>&gt;
+</span></span></code></pre></div><p>The <code>form</code> tag encapsulates a number of <code>input</code> tags, and the browser automatically provides a
+&ldquo;submit form&rdquo; action that is invoked when the submit button is clicked. That action will take the
+name and current value from every input tag, encode those into a request body (generally as
+<code>application/x-www-form-urlencoded</code>), and submit it as an HTTP request with the specified method.</p>
+<p>In order to translate this behavior into something GTK-native, we would need to add quite a bit of
+logic to our UI parsing code.</p>
+<p>A simpler and more flexible solution is to use our existing scripting capabilities. It requires a
+little more code, but it doesn&rsquo;t require us to extend the UI format at all, and it&rsquo;s still pretty
+easy to see what&rsquo;s going on:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-lua" data-lang="lua"><span style="display:flex;"><span><span style="color:#75715e">-- This would be placed inside a &lt;web:script type=&#34;lua&#34;&gt; tag.</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">-- A full example can be seen in Webby&#39;s repo at examples/forms/</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">-- TODO: put a URL</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">login</span>()
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">local</span> username <span style="color:#f92672">=</span> find_widget(<span style="color:#e6db74">&#34;username&#34;</span>):get_text()
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">local</span> password <span style="color:#f92672">=</span> find_widget(<span style="color:#e6db74">&#34;password&#34;</span>):get_text()
+</span></span><span style="display:flex;"><span>	submit_form(<span style="color:#e6db74">&#34;POST&#34;</span>, <span style="color:#e6db74">&#34;&#34;</span>, {username<span style="color:#f92672">=</span>username, password<span style="color:#f92672">=</span>password})
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">end</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>find_widget(<span style="color:#e6db74">&#34;submit&#34;</span>):connect(<span style="color:#e6db74">&#34;clicked&#34;</span>, <span style="color:#66d9ef">false</span>, login)
+</span></span><span style="display:flex;"><span>find_widget(<span style="color:#e6db74">&#34;username&#34;</span>):connect(<span style="color:#e6db74">&#34;activate&#34;</span>, <span style="color:#66d9ef">false</span>, login)
+</span></span><span style="display:flex;"><span>find_widget(<span style="color:#e6db74">&#34;password&#34;</span>):connect(<span style="color:#e6db74">&#34;activate&#34;</span>, <span style="color:#66d9ef">false</span>, login)
+</span></span></code></pre></div><p>The <code>submit_form()</code> function takes three arguments:</p>
+<ol>
+<li>A method, in this case <code>POST</code></li>
+<li>An action (or a URL to send the form request to), in this case an empty string, which tells
+Webby to use the current location</li>
+<li>A table containing key-value form value pairs</li>
+</ol>
+<p>The form data will be encoded the same way a browser would do it, and the result submitted to the
+web server.</p>
+<h2 id="cookie-support">Cookie Support</h2>
+<p>While not strictly related to form processing, Webby&rsquo;s internal HTTP client supports cookies, which
+work well with forms that need to save session data. Here are some screenshots from the included
+forms example:</p>
+<figure class="regular"><img src="/images/building-gtk-applications-like-websites/login-form-1.png"/>
+</figure>
+
+<p>When this form is submitted, it will make a POST request to <code>http://localhost:8004/</code> with the
+entered username and password as form fields. After processing, the page will refresh, this time
+with cookie session information.</p>
+<figure class="regular"><img src="/images/building-gtk-applications-like-websites/login-form-2.png"/>
+</figure>
+
+<h1 id="page-title">Page Title</h1>
+<p>A very small, but important feature for user experience on the web is the ability to set the page
+title. By default, the current URL is shown as the title, but that&rsquo;s not very readable.</p>
+<p>In HTML this is done with a <code>&lt;title&gt;</code> tag within a <code>&lt;head&gt;</code> tag. For Webby, page metadata is added
+using attributes on a <code>&lt;web:page&gt;</code> tag:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-xml" data-lang="xml"><span style="display:flex;"><span><span style="color:#f92672">&lt;web:page</span> <span style="color:#a6e22e">title=</span><span style="color:#e6db74">&#34;Index&#34;</span><span style="color:#f92672">/&gt;</span>
+</span></span></code></pre></div><h1 id="missing-features">Missing Features</h1>
+<p>Webby is intended to be very simple, and will never attempt to implement the full set of features
+available in modern-day web browsers. However, there are a few features that would be very useful,
+and potentially worth adding:</p>
+<ol>
+<li>History, for remembering visited locations</li>
+<li>Back/Forward buttons</li>
+<li>Page refresh</li>
+<li><code>src</code> attributes for scripts and styles</li>
+<li>Basic authentication</li>
+</ol>
+<h1 id="final-thoughts">Final Thoughts</h1>
+<p>This entire exercise stems from my enjoyment of GTK programming, coupled with my frustration at
+shoehorning the web into everything as the One True Platform.</p>
+<p>The web&rsquo;s success is not unwarranted, since it is a truly innovative, powerful, and perhaps most
+importantly, open platform. However, it is not without its faults. One of the biggest problems with
+the web is the sheer size and complexity of its browsers.
+<a href="https://www.openhub.net/p/chrome/analyses/latest/languages_summary">Chromium</a> and
+<a href="https://www.openhub.net/p/firefox/analyses/latest/languages_summary">Firefox</a> both contain over 25
+million lines of code; for comparison,
+<a href="https://www.openhub.net/p/gtk/analyses/latest/languages_summary">GTK</a> is under 900k. This
+complexity coupled with the web&rsquo;s popularity means that it is a real security concern for sensitive
+applications.</p>
+<p>Or, for a less serious reason to avoid defaulting to the web for everything: it&rsquo;s more fun to use
+something besides HTML and JavaScript. 🤷</p>
+<p>While the solution I outline here may not be for everyone, I think there is some real value in
+bringing some of the web&rsquo;s lessons to other platforms.</p>
+<p>If you made it this far, thanks for reading!</p>
+<!-- raw HTML omitted -->
+
+  </div>
+
+    </main>
+
+    
+  </body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-us" lang="en-us">
+<head>
+  <link href="//gmpg.org/xfn/11" rel="profile">
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="generator" content="Hugo 0.115.1">
+
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Hot Reload in Uno and GTK &middot; Version 7.0</title>
+
+  
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/print.css" media="print">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/poole.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/syntax.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/hyde.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Abril+Fatface|PT+Sans:400,400i,700">
+
+
+  
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="/apple-touch-icon-144-precomposed.png">
+  <link rel="shortcut icon" href="/favicon.png">
+
+  
+  
+</head>
+
+  <body class=" ">
+  <aside class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      <a href="https://damienradtke.com/"><h1>Version 7.0</h1></a>
+      <p class="lead">
+       Fixes many known issues with version 6.0 
+      </p>
+    </div>
+
+    <nav>
+      <ul class="sidebar-nav">
+        <li><a href="https://damienradtke.com/">Home</a> </li>
+        <li><a href="/pages/about"> About </a></li><li><a href="https://github.com/dradtke/"> Projects — Github </a></li><li><a href="https://git.sr.ht/~damien"> Projects — Sourcehut </a></li>
+      </ul>
+    </nav>
+
+    <p>&copy; 2023. All rights reserved. </p>
+  </div>
+</aside>
+
+    <main class="content container">
+    <div class="post">
+    <h1>Hot Reload in Uno and GTK</h1>
+    
+      <time datetime=2021-07-30T00:00:00Z class="post-date">Fri, Jul 30, 2021</time>
+    
+
+    <h1 id="uno">Uno</h1>
+<p>While playing around with Microsoft&rsquo;s Uno Platform, I discovered its super-neat <a href="https://platform.uno/docs/articles/features/working-with-xaml-hot-reload.html">XAML Hot
+Reload</a> feature. It
+basically does exactly what you think it would; while the app is running, changes made to any XAML
+file will be reflected automatically, without needing to re-build anything. This is basically the
+desktop development equivalent of <a href="http://livereload.com/">LiveReload</a>, and is a great way to
+tighten the feedback loop and enable faster development.</p>
+<p>Unfortunately, my laptop only runs Linux, and their documentation requires you to use the Visual
+Studio Add-in in order to use hot reload. After some searching, however, I discovered Matheus
+Castello&rsquo;s
+<a href="https://microhobby.com.br/blog/2020/11/30/vs-code-xaml-preview-embedded-linux-dotnet-core/">post</a>
+about getting hot reload to work on embedded Linux. This was very promising, but he did not go into
+any detail about how he got it working, only providing some videos of his Visual Studio Code
+extension.</p>
+<p>However, after some work, I was able to get it working in an editor-agnostic way. Here&rsquo;s Uno Hot
+Reload in action using nothing but tmux and Neovim:</p>
+<video class="video-shortcode" preload="" controls width="100%">
+    <source src="/videos/hot-reload-uno-gtk/Uno%20Hot%20Reload.mp4" type="video/mp4">
+    There should have been a video here but your browser does not seem to support it.
+</video>
+
+<p>The bottom-left pane is running the Uno Remote Control Host, which lives within Uno&rsquo;s source tree,
+using something like this:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># As of writing, the Remote Control Host requires .NET Core 3.</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># When using asdf with the dotnet-core plugin, you can set the correct</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># version with:</span>
+</span></span><span style="display:flex;"><span>$ asdf install dotnet-core 3.1.401 <span style="color:#f92672">&amp;&amp;</span> asdf shell dotnet-core 3.1.401
+</span></span><span style="display:flex;"><span>$ source ~/.asdf/plugins/dotnet-core/set-dotnet-home.bash
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Now build and run the Remote Control Host.</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># &#34;${uno}&#34; refers to the path of the Uno source tree.</span>
+</span></span><span style="display:flex;"><span>$ cd <span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>uno<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>/src/Uno.UI.RemoteControl.Host
+</span></span><span style="display:flex;"><span>$ <span style="color:#e6db74">&#34;</span><span style="color:#e6db74">${</span>DOTNET_ROOT<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34;</span>/dotnet build
+</span></span><span style="display:flex;"><span>$ cd bin/Debug/netcoreapp3.1
+</span></span><span style="display:flex;"><span>$ ./Uno.UI.RemoteControl.Host --httpPort<span style="color:#f92672">=</span><span style="color:#ae81ff">9876</span></span></span></code></pre></div>
+<p>(The fully-working script lives in my dotfiles
+<a href="https://git.sr.ht/~damien/dotfiles/tree/master/item/vim/bin/uno-hot-reload">here</a>)</p>
+<p>The bottom-right pane is running the Skia.Gtk target, configured to use the Remote Control Host
+running on port 9876 (or whatever port number you specify):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ dotnet build -property:UnoRemoteControlPort<span style="color:#f92672">=</span><span style="color:#ae81ff">9876</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>    dotnet run --no-build</span></span></code></pre></div>
+<p>Note that <a href="https://docs.microsoft.com/en-us/dotnet/core/tools/dotnet-run"><code>dotnet run</code></a> does not
+support specifying additional project properties as arguments, but <code>dotnet build</code> does, so this
+command separates out the build and run steps. The alternative would be to open the project file
+and add the <code>UnoRemoteControlPort</code> property manually, which works too, but would need to be updated
+any time you change the port or want to disable the hot reload feature.</p>
+<h1 id="gtk">GTK</h1>
+<p>Having seen how useful hot reload can be for desktop development, I started to wonder how to
+accomplish something similar using plain GTK. It supports an XML-based <a href="https://docs.gtk.org/gtk4/class.Builder.html#a-gtkbuilder-ui-definition">UI definition
+language</a> too, so it
+shouldn&rsquo;t be too difficult to support a similar feature.</p>
+<p>It requires a little bit of extra code, but I can confirm that it is indeed possible!</p>
+<video class="video-shortcode" preload="" controls width="100%">
+    <source src="/videos/hot-reload-uno-gtk/GTK%20Hot%20Reload.mp4" type="video/mp4">
+    There should have been a video here but your browser does not seem to support it.
+</video>
+
+<p>This version of hot reload does not use a separate server; rather, the application itself monitors
+the UI file for changes, and when a change is detected, it re-invokes the rendering function. My
+example is in C, but it&rsquo;s pretty short, and the same technique can be easily transferred to any
+language with GTK bindings:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// main.c
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;gtk/gtk.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&#34;hot-reload.c&#34;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">on_load_main_window</span>(
+</span></span><span style="display:flex;"><span>	GtkBuilder <span style="color:#f92672">*</span>builder,
+</span></span><span style="display:flex;"><span>	GtkApplicationWindow <span style="color:#f92672">*</span>window
+</span></span><span style="display:flex;"><span>) {
+</span></span><span style="display:flex;"><span>	GObject <span style="color:#f92672">*</span>content_box <span style="color:#f92672">=</span> <span style="color:#a6e22e">gtk_builder_get_object</span>(builder, <span style="color:#e6db74">&#34;content&#34;</span>);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">gtk_window_set_child</span>(<span style="color:#a6e22e">GTK_WINDOW</span>(window), <span style="color:#a6e22e">GTK_WIDGET</span>(content_box));
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">on_unload_main_window</span>(
+</span></span><span style="display:flex;"><span>	GtkBuilder <span style="color:#f92672">*</span>builder,
+</span></span><span style="display:flex;"><span>	GtkApplicationWindow <span style="color:#f92672">*</span>window
+</span></span><span style="display:flex;"><span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">g_info</span>(<span style="color:#e6db74">&#34;Unloading main window&#34;</span>);
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// Nothing to do explicitly (I think) if just replacing the window&#39;s child
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">activate</span>(GtkApplication <span style="color:#f92672">*</span>app, gpointer user_data) {
+</span></span><span style="display:flex;"><span>	GtkWidget <span style="color:#f92672">*</span>window <span style="color:#f92672">=</span> <span style="color:#a6e22e">gtk_application_window_new</span>(app);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">gtk_widget_set_size_request</span>(window, <span style="color:#ae81ff">400</span>, <span style="color:#ae81ff">300</span>);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">hot_reload</span>(
+</span></span><span style="display:flex;"><span>		<span style="color:#e6db74">&#34;main.ui&#34;</span>,
+</span></span><span style="display:flex;"><span>		(GFunc)on_load_main_window,
+</span></span><span style="display:flex;"><span>		(GFunc)on_unload_main_window,
+</span></span><span style="display:flex;"><span>		window
+</span></span><span style="display:flex;"><span>	);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">gtk_window_present</span>(<span style="color:#a6e22e">GTK_WINDOW</span>(window));
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>The <code>hot_reload()</code> method creates a builder for <code>main.ui</code>, invokes the specified load callback, and
+then constructs a <code>GFileMonitor</code> that listens for changes to it. When a change is detected, the
+unload callback is invoked (if provided), and then the builder is re-created, and the load callback
+re-invoked.</p>
+<p>The full example can be seen <a href="https://git.sr.ht/~damien/gtk-hot-reload">here</a>, though I am not a
+professional in C, so don&rsquo;t be too surprised if I missed a memory leak somewhere. It is intended to
+serve primarily as a proof-of-concept, rather than a full-fledged implementation.</p>
+<!-- raw HTML omitted -->
+
+  </div>
+
+    </main>
+
+    
+  </body>
+</html>

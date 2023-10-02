@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-us" lang="en-us">
+<head>
+  <link href="//gmpg.org/xfn/11" rel="profile">
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="generator" content="Hugo 0.115.1">
+
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Nomad Task Versioning &middot; Version 7.0</title>
+
+  
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/print.css" media="print">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/poole.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/syntax.css">
+  <link type="text/css" rel="stylesheet" href="https://damienradtke.com/css/hyde.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Abril+Fatface|PT+Sans:400,400i,700">
+
+
+  
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="/apple-touch-icon-144-precomposed.png">
+  <link rel="shortcut icon" href="/favicon.png">
+
+  
+  
+</head>
+
+  <body class=" ">
+  <aside class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      <a href="https://damienradtke.com/"><h1>Version 7.0</h1></a>
+      <p class="lead">
+       Fixes many known issues with version 6.0 
+      </p>
+    </div>
+
+    <nav>
+      <ul class="sidebar-nav">
+        <li><a href="https://damienradtke.com/">Home</a> </li>
+        <li><a href="/pages/about"> About </a></li><li><a href="https://github.com/dradtke/"> Projects — Github </a></li><li><a href="https://git.sr.ht/~damien"> Projects — Sourcehut </a></li>
+      </ul>
+    </nav>
+
+    <p>&copy; 2023. All rights reserved. </p>
+  </div>
+</aside>
+
+    <main class="content container">
+    <div class="post">
+    <h1>Nomad Task Versioning</h1>
+    
+      <time datetime=2017-03-10T15:27:58-0600 class="post-date">Fri, Mar 10, 2017</time>
+    
+
+    <p>Lately I&rsquo;ve been playing around with a lot of HashiCorp tools including
+<a href="https://www.nomadproject.io/">Nomad</a>, their solution to application scheduling.
+Despite its relative immaturity, there are a few things I really like about it:
+straightforward, readable configuration syntax; ease of integration with other
+HashiCorp tools; and flexible runtime drivers, including raw execution, meaning
+you&rsquo;re not tied down to containers.</p>
+<p>However, there&rsquo;s one area in which Nomad&rsquo;s documentation seems to be severely
+lacking: versioning. Nomad provides seemingly good support for rolling updates,
+but it&rsquo;s less clear how exactly to trigger one. In short, you need to make a
+change to your job file, otherwise Nomad thinks there&rsquo;s nothing else to do, even
+if the code you&rsquo;re asking it to run is different.</p>
+<!-- raw HTML omitted -->
+<p>Let&rsquo;s make things a little more concrete. Say you have the following Go web
+service that you want to deploy using Nomad:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#f92672">package</span> <span style="color:#a6e22e">main</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> (
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;log&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;net/http&#34;</span>
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">index</span>(<span style="color:#a6e22e">w</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">ResponseWriter</span>, <span style="color:#a6e22e">r</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">Request</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">Write</span>([]byte(<span style="color:#e6db74">&#34;Hello World!&#34;</span>))
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">HandleFunc</span>(<span style="color:#e6db74">&#34;/&#34;</span>, <span style="color:#a6e22e">index</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">ListenAndServe</span>(<span style="color:#e6db74">&#34;:80&#34;</span>, <span style="color:#66d9ef">nil</span>); <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">log</span>.<span style="color:#a6e22e">Fatal</span>(<span style="color:#a6e22e">err</span>)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>You build this application into a standalone binary called <code>main</code> that you
+then upload to a storage server. Now you can write a Nomad job spec that will
+execute it:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>job &#34;web&#34; {
+</span></span><span style="display:flex;"><span>    region = &#34;global&#34;
+</span></span><span style="display:flex;"><span>    datacenters = [&#34;dc1&#34;]
+</span></span><span style="display:flex;"><span>    type = &#34;service&#34;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    group &#34;webs&#34; {
+</span></span><span style="display:flex;"><span>        task &#34;frontend&#34; {
+</span></span><span style="display:flex;"><span>            driver = &#34;raw_exec&#34;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            artifact {
+</span></span><span style="display:flex;"><span>                source = &#34;http://&lt;storage-server&gt;/main&#34;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            config {
+</span></span><span style="display:flex;"><span>                command = &#34;main&#34;
+</span></span><span style="display:flex;"><span>                args = []
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            resources {
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p><em>(Some notes about the above: the <code>raw_exec</code> driver needs to be explicitly enabled
+in the Nomad options [and should only be used if Nomad itself is running under a
+dedicated user], and <code>http://&lt;storage-server&gt;/main</code> represents an HTTP endpoint
+that can download the main binary)</em></p>
+<p>Great! You have a web service up and running in Nomad. But then you realize that
+you want to know the IP address of everyone who views your site, so you rewrite
+it:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#f92672">package</span> <span style="color:#a6e22e">main</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> (
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;log&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;net/http&#34;</span>
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">index</span>(<span style="color:#a6e22e">w</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">ResponseWriter</span>, <span style="color:#a6e22e">r</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">Request</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">log</span>.<span style="color:#a6e22e">Printf</span>(<span style="color:#e6db74">&#34;New connection from %s&#34;</span>, <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">RemoteAddr</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">Write</span>([]byte(<span style="color:#e6db74">&#34;Hello World!&#34;</span>))
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">HandleFunc</span>(<span style="color:#e6db74">&#34;/&#34;</span>, <span style="color:#a6e22e">index</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">http</span>.<span style="color:#a6e22e">ListenAndServe</span>(<span style="color:#e6db74">&#34;:80&#34;</span>, <span style="color:#66d9ef">nil</span>); <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">log</span>.<span style="color:#a6e22e">Fatal</span>(<span style="color:#a6e22e">err</span>)
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>You re-build it, upload the new <code>main</code> executable to your storage server, and
+re-submit the job.</p>
+<p>Then nothing happens.</p>
+<p>That&rsquo;s because you haven&rsquo;t made a change to the job file, and Nomad doesn&rsquo;t know
+that the remote artifact has changed. One way around this is to upload the
+binary as <code>main2</code>, update your job file, and re-submit. Nomad then sees it&rsquo;s
+supposed to be running <code>main2</code> instead of <code>main</code> and subsequently begins the
+update process of downloading the new file and executing it. This works, but is
+a very primitive solution and involves too much manual renaming and updating.</p>
+<p>Let&rsquo;s do better.</p>
+<h2 id="job-file-templating">Job File Templating</h2>
+<p>The first step is to stop building your file as simply <code>main</code> and start adding a
+version number to it. If you&rsquo;re using Git and running on something Unix-based,
+then something like this will get the job done:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ go build -o main:<span style="color:#66d9ef">$(</span>git rev-parse --short HEAD<span style="color:#66d9ef">)</span></span></span></code></pre></div>
+<p>This produces a binary called something like <code>main:72b816f</code>, which can be
+uploaded to the storage server as-is. Then you need to update your job file with
+a placeholder for the version number (a proper templating language would be
+better, but for this example we&rsquo;re just using <code>sed</code>):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>job &#34;web&#34; {
+</span></span><span style="display:flex;"><span>    region = &#34;global&#34;
+</span></span><span style="display:flex;"><span>    datacenters = [&#34;dc1&#34;]
+</span></span><span style="display:flex;"><span>    type = &#34;service&#34;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    group &#34;webs&#34; {
+</span></span><span style="display:flex;"><span>        task &#34;frontend&#34; {
+</span></span><span style="display:flex;"><span>            driver = &#34;raw_exec&#34;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            artifact {
+</span></span><span style="display:flex;"><span>                source = &#34;http://&lt;storage-server&gt;/main:MAIN_VERSION&#34;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            config {
+</span></span><span style="display:flex;"><span>                command = &#34;main:MAIN_VERSION&#34;
+</span></span><span style="display:flex;"><span>                args = []
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            resources {
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></div>
+<p>Assuming this job file is named <code>web.nomad</code> and the versioned binary has been
+uploaded, you can then update your application using a fairly simple shell
+script:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e">#!/bin/bash
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Create a fresh temp directory</span>
+</span></span><span style="display:flex;"><span>DIR<span style="color:#f92672">=</span><span style="color:#66d9ef">$(</span>mktemp -d<span style="color:#66d9ef">)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Write a copy of web.nomad to the temp directory, but with</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># all instances of MAIN_VERSION replaced with the actual version</span>
+</span></span><span style="display:flex;"><span>sed <span style="color:#e6db74">&#34;s/MAIN_VERSION/</span><span style="color:#66d9ef">$(</span>git rev-parse --short HEAD<span style="color:#66d9ef">)</span><span style="color:#e6db74">/g&#34;</span> web.nomad <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  &gt;$DIR/web.nomad
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Run the generated job file</span>
+</span></span><span style="display:flex;"><span>nomad run $DIR/web.nomad
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Clean up</span>
+</span></span><span style="display:flex;"><span>rm -r $DIR</span></span></code></pre></div>
+<h2 id="wrapping-up">Wrapping Up</h2>
+<p>That wasn&rsquo;t too hard, but there are a couple things Nomad could do to make
+this better:</p>
+<ol>
+<li><strong>Templated job files</strong>. This would provide a flexible way to inject values into
+the job file at the time <code>nomad run</code> is executed, which has any number of
+potential uses beyond application versioning.</li>
+<li><strong>Better documentation</strong>. The use case of updating an application&rsquo;s code with no
+other changes to the job file is mysteriously missing from Nomad&rsquo;s docs.
+Nomad should settle on a best practice for this and make sure it&rsquo;s
+well-documented.</li>
+<li>Explicit support for artifact versioning? Not sure what exactly this would
+look like, and properly documenting an approach like mine would likely be
+enough, but it&rsquo;s such a central concept that it&rsquo;s worth considering.</li>
+</ol>
+
+  </div>
+
+    </main>
+
+    
+  </body>
+</html>
